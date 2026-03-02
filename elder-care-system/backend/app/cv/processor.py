@@ -16,8 +16,11 @@ from scipy.spatial.distance import cosine
 from sqlalchemy.orm import Session
 from ..db.models import Elder
 
-# 模型路徑：為解決 Windows 中文路徑編碼問題，統一使用 C:\elder_care_models
-_BASE = r"C:\elder_care_models"
+# 模型路徑：
+# 1. 優先讀取環境變數 MODEL_PATH
+# 2. 如果是 Windows 且路徑包含中文，建議使用 C:\elder_care_models
+# 3. Docker 環境下預設為 /app/models
+_BASE = os.getenv("MODEL_PATH", r"C:\elder_care_models" if os.name == 'nt' else "/app/models")
 POSE_MODEL = os.path.join(_BASE, "pose_landmarker_heavy.task")
 FACE_MODEL = os.path.join(_BASE, "face_landmarker.task")
 

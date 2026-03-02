@@ -4,7 +4,11 @@
 """
 import os, urllib.request
 
-MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
+# 模型下載目錄：
+# 1. 優先讀取環境變數 MODEL_PATH
+# 2. 如果是 Windows，預設使用 C:\elder_care_models
+# 3. 其他環境（如 Docker/Linux）預設使用 ./models
+MODELS_DIR = os.getenv("MODEL_PATH", r"C:\elder_care_models" if os.name == 'nt' else os.path.join(os.path.dirname(__file__), "models"))
 os.makedirs(MODELS_DIR, exist_ok=True)
 
 MODELS = {

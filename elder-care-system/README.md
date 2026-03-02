@@ -15,60 +15,36 @@ A complete, privacy-focused, real-time visual monitoring system for elderly care
 - A standard USB Webcam attached to the host machine
 - LINE Channel Access Token (Optional, for notifications)
 
-## Quick Start (Docker)
+## 🚀 快速開始 (Quick Start)
 
-The easiest way to run the entire system is via Docker Compose.
+### 1. 獲取程式碼與環境
+- **團隊協作**：請參考 [遷錄至新電腦指南 (Migration Guide)](C:\Users\arthu\.gemini\antigravity\brain\ca53e959-13a4-4be4-839f-2c48f24d0cdf\migration_guide.md)
+- **環境要求**：推薦使用 **Docker Desktop**。
 
-1. Create a `.env` file in the `backend/` directory based on the `.env.example` (or configure your LINE tokens).
-2. Ensure you have a webcam plugged in (Docker mapping defaults to `/dev/video0` on Linux. On Windows/Mac, you might need to adjust the device mount or run the API natively).
-3. Build and launch:
-   ```bash
-   docker-compose up --build
-   ```
-
-4. **Access the Dashboard**: Open your browser and navigate to `http://localhost:5173`.
-   - **Username**: `caregiver_01` (or register a new user using the `/auth/register` API endpoint).
-   - **Password**: `password123`
-5. **API Docs**: Access the FastAPI Swagger UI at `http://localhost:8000/docs`.
-
-### Local Development (Native)
-
-If you have issues mounting webcams into Docker, run natively:
-
-**Terminal 1 (Backend & CV):**
-```bash
+### 2. 下載 AI 模型
+在啟動前，請確保已下載 MediaPipe 模型：
+```powershell
 cd backend
-python -m venv venv
-source venv/bin/activate  # or .\venv\Scripts\activate on Windows
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+python download_models.py
 ```
+*預設會存放於 `C:\elder_care_models` (Windows) 或 `/app/models` (Docker)。*
 
-**Terminal 2 (Frontend React):**
+### 3. 一鍵啟動 (Docker)
 ```bash
-cd frontend
-npm install
-npm run dev
+docker-compose up --build
 ```
+- **Dashboard**: `http://localhost:5173`
+- **帳號/密碼**: `admin` / `123456`
 
-## Creating a Caregiver User
-Since there is no default user pre-seeded in the DB, run the following Python snippet in the `backend/` directory while the DB is configured:
+---
 
-```python
-from app.db.database import SessionLocal
-from app.db.models import User
-from app.core.security import get_password_hash
+## 🏗️ 系統架構與開發
+有關系統組件、資料流以及如何修改功能的詳細說明，請參閱：
+👉 **[系統架構與開發指南 (Architecture Guide)](C:\Users\arthu\.gemini\antigravity\brain\ca53e959-13a4-4be4-839f-2c48f24d0cdf\system_architecture.md)**
 
-db = SessionLocal()
-u = User(username="caregiver_01", hashed_password=get_password_hash("password123"))
-db.add(u)
-db.commit()
-print("User created!")
-```
+---
 
-## Architecture
-- **Backend Model Layer**: SQLAlchemy mapped to `elder_care.db`. Data points include `ActivityLog`, `Event`, `Elder`, and `Baseline`.
-- **CV Processor**: Captures webcam stream continuously on a thread (`app/cv/capture.py`), runs MediaPipe Face/Pose extraction, and matches embeddings (`app/cv/processor.py`).
-- **Anomaly Engine**: Checks the posture heuristics (e.g. shoulder and hip deltas) against basic rules to trigger LINE alerts and insert `Event` rows.
-- **Frontend Dashboard**: Fetches REST hooks periodically to update the statistics logs, while streaming an MJPEG endpoint `<img src="http://localhost:8000/video/stream" />` directly from the backend for sub-second latency video.
+## 🛠️ 開發人員快速指引
+- **修改 UI**: `frontend/src/pages/`
+- **調整 AI 規則**: `backend/app/cv/processor.py`
+- **增加 API**: `backend/app/api/`

@@ -48,7 +48,17 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    print(f"[DEBUG AUTH] Attempting login for user: '{form_data.username}'")
     user = db.query(User).filter(User.username == form_data.username).first()
+    if not user:
+        print(f"[DEBUG AUTH] User '{form_data.username}' not found in DB")
+    elif not verify_password(form_data.password, user.hashed_password):
+        print(f"[DEBUG AUTH] Password verification FAILED for user: '{form_data.username}'")
+        # Optional: compare raw password length to check for hidden chars
+        print(f"[DEBUG AUTH] Received password length: {len(form_data.password)}")
+    else:
+        print(f"[DEBUG AUTH] Login SUCCESS for user: '{form_data.username}'")
+
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

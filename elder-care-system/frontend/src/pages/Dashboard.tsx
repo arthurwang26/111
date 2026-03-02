@@ -37,7 +37,7 @@ export default function Dashboard() {
                 <div className="lg:col-span-2 space-y-6">
                     <div className="rounded-xl overflow-hidden bg-black aspect-video ring-1 ring-white/10 relative">
                         <img
-                            src="http://localhost:8000/video/stream"
+                            src={`http://${window.location.hostname}:8000/video/stream`}
                             alt="Live Camera Feed"
                             className="w-full h-full object-contain"
                         />

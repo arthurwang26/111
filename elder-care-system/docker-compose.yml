@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   backend:
-    build: 
+    build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: elder-care-backend
@@ -15,9 +15,11 @@ services:
       - /dev/video0:/dev/video0 # Allow Docker access to webcam
     environment:
       - DATABASE_URL=sqlite:///./elder_care.db
-      - SECRET_KEY=ElderCareSecret2026
+      - SECRET_KEY=${SECRET_KEY}
       - LINE_CHANNEL_ACCESS_TOKEN=${LINE_CHANNEL_ACCESS_TOKEN}
       - LINE_USER_ID=${LINE_USER_ID}
+      - LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET}
+      - CAMERA_SOURCE=${CAMERA_SOURCE}
     restart: unless-stopped
 
   frontend:

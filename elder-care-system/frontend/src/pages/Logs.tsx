@@ -50,7 +50,7 @@ export default function LogsPage() {
         if (!path) return null;
         // 假設後端存的是絕對路徑，我們只需取最後的檔案名稱
         const filename = path.split(/[\\/]/).pop();
-        return `http://localhost:8000/static/snapshots/${filename}`;
+        return `http://${window.location.hostname}:8000/static/snapshots/${filename}`;
     };
 
     const filtered = events.filter(e => {
