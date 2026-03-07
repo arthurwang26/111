@@ -64,11 +64,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount React Frontend
+# Mount React Frontend static assets
 frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist"))
 if os.path.exists(frontend_dist):
-    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
+    from fastapi.responses import FileResponse
+    from fastapi import Request
+
+    # Mount static assets (JS/CSS/images)
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+
+    # Serve index.html for all non-API routes (React SPA catch-all)
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str, request: Request):
+        index_file = os.path.join(frontend_dist, "index.html")
+        if os.path.exists(index_file):
+            return FileResponse(index_file)
+        return {"error": "Frontend not built"}
 else:
     @app.get("/")
     def read_root():
         return {"status": "ok", "message": "Elderly Care API is running. Frontend build not found."}
+

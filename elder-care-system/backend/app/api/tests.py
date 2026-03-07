@@ -15,7 +15,11 @@ def test_line():
 def test_fall(db: Session = Depends(get_db)):
     resident = db.query(Resident).first()
     if not resident:
-        return {"success": False, "message": "No residents found"}
+        # 自動建立一個測試假人
+        resident = Resident(name="Test Elder", room="101", age=80)
+        db.add(resident)
+        db.commit()
+        db.refresh(resident)
     
     event = AbnormalEvent(
         resident_id=resident.id,
@@ -36,7 +40,11 @@ def test_snapshot(db: Session = Depends(get_db)):
     
     resident = db.query(Resident).first()
     if not resident:
-        return {"success": False, "message": "No residents found"}
+        # 自動建立一個測試假人
+        resident = Resident(name="Test Elder", room="101", age=80)
+        db.add(resident)
+        db.commit()
+        db.refresh(resident)
 
     frame = pipeline.get_frame()
     if frame is None:
