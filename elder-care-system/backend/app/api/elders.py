@@ -1,3 +1,4 @@
+# [檔案用途：長者資料管理(CRUD) API] (不需更動)
 """
 長者管理 API
 - GET    /api/elders           查詢所有長者
@@ -12,8 +13,8 @@ import cv2
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from ..db.database import get_db
-from ..db import models
+from ..db import get_db
+from .. import db as models
 from .auth import get_current_user
 
 router = APIRouter(prefix="/api/elders", tags=["Elders"])

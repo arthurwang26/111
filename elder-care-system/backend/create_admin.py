@@ -1,5 +1,6 @@
-from app.db.database import SessionLocal
-from app.db.models import User
+# [檔案用途：建立預設管理員帳號腳本] (不需更動)
+from app.db import SessionLocal
+from app.db import User
 from app.core.security import get_password_hash
 
 def create_admin():

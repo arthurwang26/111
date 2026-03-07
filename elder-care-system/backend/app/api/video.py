@@ -1,7 +1,8 @@
+# [檔案用途：即時影像串流 API] (不需更動)
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from ..db.database import get_db
+from ..db import get_db
 from ..cv.capture import pipeline
 from ..cv.processor import processor
 import cv2

@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy.orm import Session
-from ..db.models import Event, Elder
+from ..db import Event, Elder
 from ..services.line_notify import send_line_alert
 import os
 import cv2

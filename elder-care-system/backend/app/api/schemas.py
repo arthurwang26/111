@@ -1,3 +1,4 @@
+# [檔案用途：資料傳輸格式定義 Pydantic Models] (若增減欄位可改)
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from datetime import datetime

@@ -1,3 +1,4 @@
+# [檔案用途：LINE Notify 通知推送邏輯] (⭐️負責通知推送的同學請專注修改此檔案⭐️)
 import os
 from dotenv import load_dotenv
 

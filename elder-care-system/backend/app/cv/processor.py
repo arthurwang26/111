@@ -1,3 +1,4 @@
+# [檔案用途：核心 AI 處理與姿勢辨識] (⭐️負責辨識的兩位同學請專注修改此檔案⭐️ 可以自由調整跌倒判斷邏輯和閾值)
 """
 CV 處理器 - 使用 mediapipe.tasks Vision API（新版，0.10.x 相容）
 支援：
@@ -14,7 +15,7 @@ from mediapipe.tasks.python import vision as mp_vision
 from mediapipe.tasks.python.vision.core.vision_task_running_mode import VisionTaskRunningMode
 from scipy.spatial.distance import cosine
 from sqlalchemy.orm import Session
-from ..db.models import Elder
+from ..db import Elder
 
 # 模型路徑：
 # 1. 優先讀取環境變數 MODEL_PATH

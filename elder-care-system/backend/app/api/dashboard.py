@@ -1,8 +1,9 @@
+# [檔案用途：首頁儀表板資料 API] (不需更動)
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from ..db.database import get_db
-from ..db import models
+from ..db import get_db
+from .. import db as models
 from .auth import get_current_user
 from .schemas import User
 

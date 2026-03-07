@@ -1,5 +1,6 @@
-from app.db.database import engine
-from app.db.models import Base
+# [檔案用途：初始化空資料庫腳本] (不需更動)
+from app.db import engine
+from app.db import Base
 
 def init_db():
     print("Creating database tables...")

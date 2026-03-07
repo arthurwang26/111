@@ -1,3 +1,4 @@
+# [檔案用途：長者日常作息基準線背景任務] (處理誤報邏輯可改)
 """
 活動基線追蹤引擎
 - 每 5 分鐘計算各長者的即時活動水平（目前是否在畫面中移動）
@@ -9,8 +10,8 @@ import threading
 import time
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
-from ..db.database import SessionLocal
-from ..db.models import Elder, ActivityLog, Baseline, Event
+from ..db import SessionLocal
+from ..db import Elder, ActivityLog, Baseline, Event
 from .line_notify import send_line_alert
 
 

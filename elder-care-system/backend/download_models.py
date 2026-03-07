@@ -1,3 +1,4 @@
+# [檔案用途：下載預訓練 AI 模組腳本] (不需更動)
 """
 自動下載 MediaPipe Tasks 所需的官方預訓練模型。
 執行方式：python download_models.py
