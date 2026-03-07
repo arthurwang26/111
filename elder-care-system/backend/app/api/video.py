@@ -15,8 +15,8 @@ async def frame_generator(db: Session):
     if not pipeline.running:
         pipeline.start()
         
-    # Reload elders into cv cache
-    processor.refresh_elders(db)
+    # Reload residents into cv cache
+    processor.refresh_residents(db)
 
     try:
         while True:

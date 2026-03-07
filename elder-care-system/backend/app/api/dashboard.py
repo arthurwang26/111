@@ -9,44 +9,43 @@ from .schemas import User
 
 router = APIRouter(prefix="/api", tags=["Dashboard"])
 
-@router.get("/elders", response_model=list) # simplified schema for now
-def get_elders(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Retrieve all monitored elders."""
-    elders = db.query(models.Elder).all()
+@router.get("/residents", response_model=list) # simplified schema for now
+def get_residents(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Retrieve all monitored residents."""
+    residents = db.query(models.Resident).all()
     # Mask embeddings for the frontend to save bandwidth
-    return [{"id": e.id, "name": e.name, "created_at": e.created_at} for e in elders]
+    return [{"id": r.id, "name": r.name, "created_at": r.created_at, "room": r.room} for r in residents]
 
-@router.get("/elders/{elder_id}")
-def get_elder_details(elder_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Get detailed info, recent activity logs, and baselines for an elder."""
-    elder = db.query(models.Elder).filter(models.Elder.id == elder_id).first()
-    if not elder:
-        raise HTTPException(status_code=404, detail="Elder not found")
+@router.get("/residents/{resident_id}")
+def get_resident_details(resident_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Get detailed info, recent activity logs, and baselines for an resident."""
+    resident = db.query(models.Resident).filter(models.Resident.id == resident_id).first()
+    if not resident:
+        raise HTTPException(status_code=404, detail="Resident not found")
     
-    recent_logs = db.query(models.ActivityLog).filter(models.ActivityLog.elder_id == elder_id).order_by(models.ActivityLog.timestamp.desc()).limit(100).all()
-    baselines = db.query(models.Baseline).filter(models.Baseline.elder_id == elder_id).order_by(models.Baseline.date.desc()).limit(7).all()
-    events = db.query(models.Event).filter(models.Event.elder_id == elder_id).order_by(models.Event.timestamp.desc()).limit(50).all()
+    recent_events = db.query(models.Event).filter(models.Event.resident_id == resident_id).order_by(models.Event.timestamp.desc()).limit(100).all()
+    daily_activities = db.query(models.DailyActivity).filter(models.DailyActivity.resident_id == resident_id).order_by(models.DailyActivity.date.desc()).limit(7).all()
+    abnormal_events = db.query(models.AbnormalEvent).filter(models.AbnormalEvent.resident_id == resident_id).order_by(models.AbnormalEvent.timestamp.desc()).limit(50).all()
 
     return {
-        "id": elder.id,
-        "name": elder.name,
-        "recent_logs": recent_logs,
-        "baselines": baselines,
-        "recent_events": events
+        "id": resident.id,
+        "name": resident.name,
+        "recent_events": recent_events,
+        "daily_activities": daily_activities,
+        "recent_abnormal_events": abnormal_events
     }
 
 @router.get("/events")
 def get_recent_events(limit: int = 50, db: Session = Depends(get_db)):
-    """Get recent system-wide anomaly events for the dashboard."""
-    events = db.query(models.Event).order_by(models.Event.timestamp.desc()).limit(limit).all()
-    # 返回包括 is_resolved 狀態
+    """Get recent system-wide abnormal events for the dashboard."""
+    events = db.query(models.AbnormalEvent).order_by(models.AbnormalEvent.timestamp.desc()).limit(limit).all()
     return events
 
 @router.patch("/events/{event_id}/resolve")
 def resolve_event(event_id: int, db: Session = Depends(get_db)):
-    event = db.query(models.Event).filter(models.Event.id == event_id).first()
+    event = db.query(models.AbnormalEvent).filter(models.AbnormalEvent.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
-    event.is_resolved = 1
+    event.is_resolved = True
     db.commit()
-    return {"status": "success", "message": f"Event {event_id} resolved"}
+    return {"status": "success", "message": f"Abnormal Event {event_id} resolved"}

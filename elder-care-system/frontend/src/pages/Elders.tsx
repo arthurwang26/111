@@ -14,7 +14,7 @@ export default function EldersPage() {
 
     const fetchElders = async () => {
         try {
-            const r = await api.get('/api/elders');
+            const r = await api.get('/api/residents');
             setElders(r.data);
         } catch { setElders([]); }
     };
@@ -29,7 +29,7 @@ export default function EldersPage() {
             const fd = new FormData();
             fd.append('name', name);
             if (photo) fd.append('photo', photo);
-            await api.post('/api/elders', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+            await api.post('/api/residents', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
             setMsg({ type: 'ok', text: `${name} 已成功登記！` });
             setName(''); setPhoto(null); setShowForm(false);
             fetchElders();
@@ -41,7 +41,7 @@ export default function EldersPage() {
     const handleDelete = async (id: number, elderName: string) => {
         if (!confirm(`確定要刪除長者「${elderName}」？`)) return;
         try {
-            await api.delete(`/api/elders/${id}`);
+            await api.delete(`/api/residents/${id}`);
             fetchElders();
         } catch { alert('刪除失敗'); }
     };

@@ -3,32 +3,32 @@ import { Activity, Search, AlertTriangle, Flame, Info, CheckCircle, ExternalLink
 import api from '../services/api';
 
 type Event = {
-    id: number; type: string; severity: string;
-    description: string; timestamp: string; elder_id: number | null;
+    id: number; type: string; level: number;
+    description: string; timestamp: string; resident_name: string;
     snapshot_path?: string; is_resolved: number;
 };
 
-const SEVERITY_STYLE: Record<string, string> = {
-    HIGH: 'bg-rose-500/15 text-rose-400 border-rose-500/20',
-    MEDIUM: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
-    LOW: 'bg-sky-500/15 text-sky-400 border-sky-500/20',
+const SEVERITY_STYLE: Record<number, string> = {
+    3: 'bg-rose-500/15 text-rose-400 border-rose-500/20',
+    2: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
+    1: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/20',
 };
 
 const SEVERITY_ICON = {
-    HIGH: <Flame size={14} />,
-    MEDIUM: <AlertTriangle size={14} />,
-    LOW: <Info size={14} />,
+    3: <Flame size={14} />,
+    2: <AlertTriangle size={14} />,
+    1: <Info size={14} />,
 };
 
 export default function LogsPage() {
     const [events, setEvents] = useState<Event[]>([]);
-    const [filter, setFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM' | 'LOW'>('ALL');
+    const [filter, setFilter] = useState<'ALL' | 3 | 2 | 1>('ALL');
     const [showResolved, setShowResolved] = useState(false);
     const [search, setSearch] = useState('');
 
     const fetchEvents = async () => {
         try {
-            const r = await api.get('/api/events?limit=200');
+            const r = await api.get('/api/events/abnormal?limit=200');
             setEvents(r.data);
         } catch { setEvents([]); }
     };
@@ -55,7 +55,7 @@ export default function LogsPage() {
 
     const filtered = events.filter(e => {
         if (!showResolved && e.is_resolved === 1) return false;
-        if (filter !== 'ALL' && e.severity !== filter) return false;
+        if (filter !== 'ALL' && e.level !== filter) return false;
         if (search && !e.description.includes(search)) return false;
         return true;
     });
@@ -66,7 +66,7 @@ export default function LogsPage() {
                 <div className="flex items-center gap-3">
                     <Activity className="text-rose-400" size={28} />
                     <div>
-                        <h1 className="text-2xl font-bold text-white">異常事件記錄</h1>
+                        <h1 className="text-2xl font-bold text-white">異常事件記錄 (Abnormal Events)</h1>
                         <p className="text-zinc-400 mt-0.5">待處理：{events.filter(e => !e.is_resolved).length} 筆</p>
                     </div>
                 </div>
@@ -86,11 +86,11 @@ export default function LogsPage() {
                         className="w-full pl-9 pr-4 py-2 rounded-lg bg-zinc-800 ring-1 ring-zinc-700 text-white text-sm placeholder:text-zinc-500 focus:ring-indigo-500 focus:outline-none"
                     />
                 </div>
-                {(['ALL', 'HIGH', 'MEDIUM', 'LOW'] as const).map(s => (
+                {(['ALL', 3, 2, 1] as const).map(s => (
                     <button key={s} onClick={() => setFilter(s)}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === s ? 'bg-indigo-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:text-white'
                             }`}>
-                        {s === 'ALL' ? '全部層級' : s}
+                        {s === 'ALL' ? '全部層級' : `Level ${s}`}
                     </button>
                 ))}
             </div>
@@ -106,13 +106,13 @@ export default function LogsPage() {
                     filtered.map(event => (
                         <div key={event.id}
                             className={`p-5 rounded-xl bg-zinc-900 border transition-opacity ${event.is_resolved ? 'opacity-50 ring-1 ring-emerald-500/20' : 'ring-1 ring-white/5'
-                                } ${SEVERITY_STYLE[event.severity] || 'border-transparent'}`}>
+                                } ${SEVERITY_STYLE[event.level] || 'border-transparent'}`}>
 
                             <div className="flex items-start justify-between gap-4">
                                 <div className="flex flex-col gap-2">
                                     <div className="flex items-center gap-2">
-                                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold ${SEVERITY_STYLE[event.severity]}`}>
-                                            {SEVERITY_ICON[event.severity as keyof typeof SEVERITY_ICON]}
+                                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold ${SEVERITY_STYLE[event.level]}`}>
+                                            {SEVERITY_ICON[event.level as keyof typeof SEVERITY_ICON]}
                                             {event.type}
                                         </span>
                                         {event.is_resolved === 1 && (

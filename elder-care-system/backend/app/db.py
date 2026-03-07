@@ -1,17 +1,24 @@
 # [檔案用途：資料庫連線設定 Engine] (請勿更動)
 import os
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Text, JSON, Boolean
+from sqlalchemy.orm import sessionmaker, declarative_base, relationship
+from sqlalchemy.sql import func
+from dotenv import load_dotenv
 
-# SQLite database file path
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./elder_care.db")
+load_dotenv()
 
-engine = create_engine(
-    DATABASE_URL, connect_args={"check_same_thread": False}
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://elder_admin:elder_password@localhost:5432/elder_care")
+
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# PostgreSQL does not need check_same_thread
+if "sqlite" in DATABASE_URL:
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 Base = declarative_base()
 
 def get_db():
@@ -22,64 +29,85 @@ def get_db():
         db.close()
 
 # [檔案用途：資料表結構定義 SQLAlchemy] (若需新增資料庫欄位可改)
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, JSON
-from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 
 class User(Base):
     __tablename__ = "users"
-
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-class Elder(Base):
-    __tablename__ = "elders"
-
+class Resident(Base):
+    __tablename__ = "residents"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
-    # Face embeddings stored as JSON string/list for easy cosine similarity in python
+    age = Column(Integer, nullable=True)
+    room = Column(String(50), nullable=True)
+    family_line_id = Column(String(100), nullable=True)
     face_embedding = Column(JSON, nullable=True) 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    activity_logs = relationship("ActivityLog", back_populates="elder", cascade="all, delete-orphan")
-    baselines = relationship("Baseline", back_populates="elder", cascade="all, delete-orphan")
-    events = relationship("Event", back_populates="elder", cascade="all, delete-orphan")
+    events = relationship("Event", back_populates="resident", cascade="all, delete-orphan")
+    daily_activities = relationship("DailyActivity", back_populates="resident", cascade="all, delete-orphan")
+    abnormal_events = relationship("AbnormalEvent", back_populates="resident", cascade="all, delete-orphan")
 
-class ActivityLog(Base):
-    __tablename__ = "activity_logs"
-
+class Camera(Base):
+    __tablename__ = "cameras"
     id = Column(Integer, primary_key=True, index=True)
-    elder_id = Column(Integer, ForeignKey("elders.id"), nullable=False)
-    timestamp = Column(DateTime(timezone=True), server_default=func.now(), index=True)
-    activity_level = Column(Float, nullable=False) # e.g. 0.0 to 1.0 (movement intensity)
-    posture = Column(String(50), nullable=True) # e.g. standing, sitting, lying
-    location = Column(String(50), nullable=True) # future proofing (e.g. bed, living room if multiple cams)
-
-    elder = relationship("Elder", back_populates="activity_logs")
-
-class Baseline(Base):
-    __tablename__ = "baselines"
-
-    id = Column(Integer, primary_key=True, index=True)
-    elder_id = Column(Integer, ForeignKey("elders.id"), nullable=False)
-    date = Column(DateTime(timezone=True), server_default=func.now()) # Repesents the date this baseline aggregates
-    avg_activity_level = Column(Float, nullable=False)
-    sedentary_duration_mins = Column(Float, nullable=False, default=0.0)
+    name = Column(String(100), nullable=False)
+    source = Column(String(255), nullable=False) # URL, RTSP, or device index
+    location = Column(String(100), nullable=True)
+    status = Column(String(20), default="offline") # online, offline, error
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    elder = relationship("Elder", back_populates="baselines")
+    events = relationship("Event", back_populates="camera", cascade="all, delete-orphan")
 
-class Event(Base):
+class Event(Base): # General behavior/interaction events
     __tablename__ = "events"
-    
     id = Column(Integer, primary_key=True, index=True)
-    elder_id = Column(Integer, ForeignKey("elders.id"), nullable=False)
+    resident_id = Column(Integer, ForeignKey("residents.id"), nullable=True)
+    camera_id = Column(Integer, ForeignKey("cameras.id"), nullable=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now(), index=True)
-    type = Column(String(50), nullable=False) # e.g. "FALL", "INACTIVITY", "DEVIATION"
-    severity = Column(String(20), nullable=False) # e.g. "HIGH", "MEDIUM"
+    activity_type = Column(String(50), nullable=False) # walk, sit, lay, eat, play, watch_tv
+    object_interaction = Column(String(100), nullable=True) # wheelchair, cup, cane, etc.
     description = Column(Text, nullable=True)
-    snapshot_path = Column(String(255), nullable=True) # local path to the saved image frame
-    is_resolved = Column(Integer, server_default="0", nullable=False) # 0 for false, 1 for true
 
-    elder = relationship("Elder", back_populates="events")
+    resident = relationship("Resident", back_populates="events")
+    camera = relationship("Camera", back_populates="events")
+
+class DailyActivity(Base):
+    __tablename__ = "daily_activity"
+    id = Column(Integer, primary_key=True, index=True)
+    resident_id = Column(Integer, ForeignKey("residents.id"), nullable=False)
+    date = Column(DateTime(timezone=True), server_default=func.now())
+    walking_mins = Column(Float, default=0.0)
+    sitting_mins = Column(Float, default=0.0)
+    sleeping_mins = Column(Float, default=0.0)
+    interaction_mins = Column(Float, default=0.0)
+    health_score = Column(Float, default=0.0)
+    summary_text = Column(Text, nullable=True) # AI summary
+    
+    resident = relationship("Resident", back_populates="daily_activities")
+
+class AbnormalEvent(Base):
+    __tablename__ = "abnormal_events"
+    id = Column(Integer, primary_key=True, index=True)
+    resident_id = Column(Integer, ForeignKey("residents.id"), nullable=True)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    level = Column(Integer, nullable=False) # 1, 2, 3
+    type = Column(String(50), nullable=False) # fall, inactivity_20m, night_activity, dangerous_object
+    description = Column(Text, nullable=True)
+    snapshot_path = Column(String(255), nullable=True)
+    video_path = Column(String(255), nullable=True)
+    ai_summary = Column(Text, nullable=True)
+    is_resolved = Column(Boolean, default=False)
+    
+    resident = relationship("Resident", back_populates="abnormal_events")
+
+class SystemHealthLog(Base):
+    __tablename__ = "system_health_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    module = Column(String(50), nullable=False) # camera, cv_model, line_bot, database
+    status = Column(String(20), nullable=False) # ok, warning, error
+    message = Column(Text, nullable=True)

@@ -1,6 +1,19 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:15
+    container_name: elder-care-db
+    environment:
+      POSTGRES_USER: elder_admin
+      POSTGRES_PASSWORD: elder_password
+      POSTGRES_DB: elder_care
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -13,13 +26,16 @@ services:
       - /dev/video0:/dev/video0 # Linux mapping for webcam
     devices:
       - /dev/video0:/dev/video0 # Allow Docker access to webcam
+    depends_on:
+      - postgres
     environment:
-      - DATABASE_URL=sqlite:///./elder_care.db
+      - DATABASE_URL=postgresql://elder_admin:elder_password@postgres:5432/elder_care
       - SECRET_KEY=${SECRET_KEY}
       - LINE_CHANNEL_ACCESS_TOKEN=${LINE_CHANNEL_ACCESS_TOKEN}
       - LINE_USER_ID=${LINE_USER_ID}
       - LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET}
       - CAMERA_SOURCE=${CAMERA_SOURCE}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     restart: unless-stopped
 
   frontend:
@@ -35,3 +51,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  postgres_data:

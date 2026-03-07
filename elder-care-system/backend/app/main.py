@@ -11,21 +11,25 @@ os.makedirs("snapshots", exist_ok=True)
 # Create database tables (if they don't exist yet, Alembic will handle migrations later)
 Base.metadata.create_all(bind=engine)
 
-from app.api import auth, dashboard, video, elders as elders_router
+from app.api import auth, dashboard, video, residents as residents_router, cameras as cameras_router, events as events_router, tests as tests_router
 from contextlib import asynccontextmanager
+from app.services.system_health import health_monitor
 
 @asynccontextmanager
-async def lifespan(app):
-    # 啟動時刷新 CV 長者快取
+async def lifespan(app: FastAPI):
+    # Startup: Load registered residents into CV processor and start background tasks
+    health_monitor.start()
     try:
         from app.cv.processor import processor
         from app.db import SessionLocal
         db = SessionLocal()
-        processor.refresh_elders(db)
+        processor.refresh_residents(db)
         db.close()
     except Exception as e:
         print(f"[Startup] CV 初始化: {e}")
     yield  # 應用程式運行中
+    # Shutdown
+    health_monitor.stop()
 
 app = FastAPI(
     title="Elderly Long-term Care API",
@@ -37,7 +41,10 @@ app = FastAPI(
 app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(video.router)
-app.include_router(elders_router.router)
+app.include_router(residents_router.router)
+app.include_router(cameras_router.router)
+app.include_router(events_router.router)
+app.include_router(tests_router.router)
 
 app.mount("/static/snapshots", StaticFiles(directory="snapshots"), name="snapshots")
 

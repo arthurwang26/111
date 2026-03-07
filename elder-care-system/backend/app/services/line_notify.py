@@ -17,16 +17,42 @@ except Exception as e:
     line_bot_api = None
     print(f"Warning: LINE SDK init failed: {e}")
 
-def send_line_alert(message: str, image_path: str = None) -> bool:
-    """向設定的 LINE 使用者傳送推播通知。"""
+from linebot.models import TextSendMessage, ImageSendMessage
+
+def send_line_alert(description: str, image_path: str = None, level: int = 1) -> bool:
+    """
+    向設定的 LINE 使用者傳送推播通知。
+    level 1: 一般訊息
+    level 2: 警示訊息
+    level 3: 緊急警報 (如果可以，會附帶照片)
+    """
     if not line_bot_api or not LINE_USER_ID:
-        print(f"[Mock LINE Alert] {message}")
+        prefix = ["INFO", "WARNING", "EMERGENCY"][level-1]
+        print(f"[Mock LINE {prefix}] {description} (Image: {image_path})")
         return False
 
     try:
-        text = f"🚨 長照系統警報 🚨\n\n{message}"
-        line_bot_api.push_message(LINE_USER_ID, TextSendMessage(text=text))
-        print("LINE 通知傳送成功。")
+        messages = []
+        
+        if level == 3:
+            text = f"🚨 [緊急異常警報] 🚨\n\n{description}"
+        elif level == 2:
+            text = f"⚠️ [系統警示] ⚠️\n\n{description}"
+        else:
+            text = f"ℹ️ [系統通知]\n\n{description}"
+            
+        messages.append(TextSendMessage(text=text))
+
+        # 傳送照片: LINE Message API 需要使用對外公開的 HTTPS 網址
+        # 如果您有串接 Imgur API 或是 Ngrok 公開網址，可以在這裡實作
+        if image_path and level == 3:
+            # TODO: 將 image_path 上傳到圖床或透過 Ngrok 轉換為 public_url
+            # img_msg = ImageSendMessage(original_content_url=public_url, preview_image_url=public_url)
+            # messages.append(img_msg)
+            pass
+
+        line_bot_api.push_message(LINE_USER_ID, messages)
+        print(f"LINE 通知 (Level {level}) 傳送成功。")
         return True
     except LineBotApiError as e:
         print(f"LINE 通知傳送失敗: {e}")
