@@ -9,6 +9,7 @@ import {
     Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import api from '../services/api';
+import { useTranslation } from '../contexts/I18nContext';
 
 interface ResidentDetail {
     id: number;
@@ -61,6 +62,7 @@ export default function ElderDetailPage() {
 
     // 活動趨勢檢視模式
     const [viewMode, setViewMode] = useState<ViewMode>('daily');
+    const { t } = useTranslation();
 
     const fetchData = async () => {
         try {
@@ -98,9 +100,9 @@ export default function ElderDetailPage() {
             // ✅ 上傳成功：直接設定為 true，且不讓 fetchData 覆蓋
             setEmbeddingReady(true);
             setData(prev => prev ? { ...prev, has_embedding: true } : prev);
-            setUploadMsg({ text: r.data.message || '臉部照片更新成功！', ok: true });
+            setUploadMsg({ text: r.data.message || t('detail.photo_success'), ok: true });
         } catch (err: any) {
-            const detail = err?.response?.data?.detail || '上傳失敗，請換一張清晰的正面照片';
+            const detail = err?.response?.data?.detail || t('detail.photo_fail');
             setUploadMsg({ text: detail, ok: false });
         } finally {
             setUploading(false);
@@ -131,7 +133,7 @@ export default function ElderDetailPage() {
             setData(prev => prev ? { ...prev, name: editName.trim(), room: editRoom.trim() || null, family_line_id: editLineId.trim() || null } : prev);
             setEditOpen(false);
         } catch (err: any) {
-            setEditMsg(err?.response?.data?.detail || '儲存失敗，請重試');
+            setEditMsg(err?.response?.data?.detail || t('detail.save_fail'));
         } finally {
             setSaving(false);
         }
@@ -180,7 +182,7 @@ export default function ElderDetailPage() {
         <div className="min-h-screen bg-[#09090b] flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
                 <div className="h-12 w-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
-                <p className="text-zinc-500 font-medium">載入長者詳情中...</p>
+                <p className="text-zinc-500 font-medium">{t('detail.loading')}</p>
             </div>
         </div>
     );
@@ -189,8 +191,8 @@ export default function ElderDetailPage() {
         <div className="min-h-screen bg-[#09090b] flex items-center justify-center p-8">
             <div className="max-w-md w-full text-center space-y-4">
                 <AlertCircle className="mx-auto text-rose-500" size={48} />
-                <h2 className="text-xl font-bold text-white">{error || '找不到該長者'}</h2>
-                <button onClick={() => navigate('/elders')} className="px-6 py-2 rounded-lg bg-zinc-800 text-white hover:bg-zinc-700 transition-colors">返回列表</button>
+                <h2 className="text-xl font-bold text-white">{error || t('detail.not_found')}</h2>
+                <button onClick={() => navigate('/elders')} className="px-6 py-2 rounded-lg bg-zinc-800 text-white hover:bg-zinc-700 transition-colors">{t('detail.back_list')}</button>
             </div>
         </div>
     );
@@ -204,23 +206,23 @@ export default function ElderDetailPage() {
                         <div className="flex items-center justify-between mb-5">
                             <h3 className="text-lg font-bold text-white flex items-center gap-2">
                                 <Edit3 size={18} className="text-indigo-400" />
-                                修改長者資料
+                                {t('detail.edit_title')}
                             </h3>
                             <button onClick={() => setEditOpen(false)} className="text-zinc-500 hover:text-white transition-colors"><X size={20} /></button>
                         </div>
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-xs font-medium text-zinc-400 mb-1">姓名 *</label>
+                                <label className="block text-xs font-medium text-zinc-400 mb-1">{t('elders.name')}</label>
                                 <input value={editName} onChange={e => setEditName(e.target.value)}
                                     className="w-full rounded-lg bg-zinc-800 ring-1 ring-zinc-700 py-2.5 px-4 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                             </div>
                             <div>
-                                <label className="block text-xs font-medium text-zinc-400 mb-1">房號</label>
-                                <input value={editRoom} onChange={e => setEditRoom(e.target.value)} placeholder="例：101"
+                                <label className="block text-xs font-medium text-zinc-400 mb-1">{t('detail.lbl_room')}</label>
+                                <input value={editRoom} onChange={e => setEditRoom(e.target.value)} placeholder={t('elders.room_ph')}
                                     className="w-full rounded-lg bg-zinc-800 ring-1 ring-zinc-700 py-2.5 px-4 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-zinc-600" />
                             </div>
                             <div>
-                                <label className="block text-xs font-medium text-zinc-400 mb-1">家屬 LINE User ID</label>
+                                <label className="block text-xs font-medium text-zinc-400 mb-1">{t('detail.line_id')}</label>
                                 <input value={editLineId} onChange={e => setEditLineId(e.target.value)} placeholder="U3b98c..."
                                     className="w-full rounded-lg bg-zinc-800 ring-1 ring-zinc-700 py-2.5 px-4 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-zinc-600" />
                             </div>
@@ -230,11 +232,11 @@ export default function ElderDetailPage() {
                             <button onClick={handleSaveEdit} disabled={saving || !editName.trim()}
                                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm transition-colors disabled:opacity-50">
                                 {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={14} />}
-                                {saving ? '儲存中...' : '儲存變更'}
+                                {saving ? t('detail.saving') : t('detail.save_btn')}
                             </button>
                             <button onClick={() => setEditOpen(false)} disabled={saving}
                                 className="flex-1 px-4 py-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium text-sm transition-colors">
-                                取消
+                                {t('misc.cancel')}
                             </button>
                         </div>
                     </div>
@@ -244,7 +246,7 @@ export default function ElderDetailPage() {
             <button onClick={() => navigate('/elders')}
                 className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors group">
                 <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
-                返回長者名單
+                {t('detail.back_name')}
             </button>
 
             {/* 個人資料卡 */}
@@ -261,21 +263,21 @@ export default function ElderDetailPage() {
                             <h1 className="text-3xl font-extrabold text-white tracking-tight">{data.name}</h1>
                             {/* 雙重保障：DB 值 OR 本地上傳覆蓋 */}
                             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider whitespace-nowrap ${(data.has_embedding || embeddingReady) ? 'bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20' : 'bg-amber-500/10 text-amber-400 ring-1 ring-amber-500/20'}`}>
-                                {(data.has_embedding || embeddingReady) ? <><CheckCircle size={12} /> 臉部辨識已就緒</> : <><AlertCircle size={12} /> 尚未設定臉部</>}
+                                {(data.has_embedding || embeddingReady) ? <><CheckCircle size={12} /> {t('detail.face_ready')}</> : <><AlertCircle size={12} /> {t('detail.face_none')}</>}
                             </span>
                             <button onClick={openEdit}
                                 className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors border border-zinc-700">
-                                <Edit3 size={12} /> 修改資料
+                                <Edit3 size={12} /> {t('detail.edit_btn')}
                             </button>
                         </div>
 
                         {/* 基本資訊格 */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                             {[
-                                { icon: Home, label: '房號', value: data.room || '未填寫' },
-                                { icon: Calendar, label: '登記日期', value: formatDate(data.created_at) },
-                                { icon: User, label: '系統 ID', value: `#${data.id}` },
-                                { icon: Activity, label: 'LINE ID', value: data.family_line_id ? data.family_line_id.slice(0, 8) + '...' : '未設定' },
+                                { icon: Home, label: t('detail.lbl_room'), value: data.room || t('detail.val_empty') },
+                                { icon: Calendar, label: t('detail.lbl_reg_date'), value: formatDate(data.created_at) },
+                                { icon: User, label: t('detail.lbl_sys_id'), value: `#${data.id}` },
+                                { icon: Activity, label: t('detail.lbl_line'), value: data.family_line_id ? data.family_line_id.slice(0, 8) + '...' : t('detail.val_unset') },
                             ].map(({ icon: Icon, label, value }) => (
                                 <div key={label} className="flex items-center gap-3 text-zinc-400">
                                     <div className="p-2 rounded-lg bg-white/5 flex-shrink-0"><Icon size={15} /></div>
@@ -294,10 +296,10 @@ export default function ElderDetailPage() {
                                     <Camera size={16} className={embeddingReady ? 'text-emerald-400' : 'text-amber-400'} />
                                     <div>
                                         <p className="text-sm font-medium text-white">
-                                            {embeddingReady ? '更換臉部識別照片' : '⚠️ 尚未設定臉部識別照片'}
+                                            {embeddingReady ? t('detail.photo_title_ready') : t('detail.photo_title_none')}
                                         </p>
                                         <p className="text-xs text-zinc-500">
-                                            {embeddingReady ? '已設定，可重新上傳以更新。' : '請上傳正面清晰照片以啟用 AI 辨識。'}
+                                            {embeddingReady ? t('detail.photo_desc_ready') : t('detail.photo_desc_none')}
                                         </p>
                                     </div>
                                 </div>
@@ -307,7 +309,7 @@ export default function ElderDetailPage() {
                                     <label htmlFor={`photo-upload-${id}`}
                                         className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${uploading ? 'bg-zinc-600 text-zinc-400 cursor-not-allowed pointer-events-none' : embeddingReady ? 'bg-zinc-700 hover:bg-zinc-600 text-white' : 'bg-amber-500 hover:bg-amber-400 text-black'}`}>
                                         {uploading ? <div className="w-4 h-4 border-2 border-zinc-400/30 border-t-zinc-400 rounded-full animate-spin" /> : <Upload size={14} />}
-                                        {uploading ? '上傳中...' : embeddingReady ? '重新上傳' : '上傳照片'}
+                                        {uploading ? t('detail.photo_uploading') : embeddingReady ? t('detail.photo_reupload') : t('detail.photo_upload')}
                                     </label>
                                 </div>
                             </div>
@@ -329,13 +331,13 @@ export default function ElderDetailPage() {
                         <div className="flex items-center justify-between mb-5">
                             <h3 className="text-lg font-bold text-white flex items-center gap-2">
                                 <Activity className="text-indigo-400" size={20} />
-                                活動趨勢
+                                {t('detail.trend_title')}
                             </h3>
                             <select value={viewMode} onChange={e => setViewMode(e.target.value as ViewMode)}
                                 className="bg-zinc-800 text-white text-sm rounded-lg px-3 py-1.5 border border-zinc-700 focus:outline-none focus:border-indigo-500 cursor-pointer">
-                                <option value="daily">📅 日視圖</option>
-                                <option value="weekly">📆 週視圖</option>
-                                <option value="monthly">🗓️ 月視圖</option>
+                                <option value="daily">{t('detail.view_daily')}</option>
+                                <option value="weekly">{t('detail.view_weekly')}</option>
+                                <option value="monthly">{t('detail.view_monthly')}</option>
                             </select>
                         </div>
                         <div className="h-[300px]">
@@ -368,8 +370,8 @@ export default function ElderDetailPage() {
                             ) : (
                                 <div className="h-full flex flex-col items-center justify-center text-zinc-600 border-2 border-dashed border-zinc-800 rounded-xl">
                                     <FileText size={40} className="mb-3 opacity-20" />
-                                    <p className="font-medium">目前尚無活動數據</p>
-                                    <p className="text-sm mt-1">系統將在辨識到長者後開始記錄</p>
+                                    <p className="font-medium">{t('detail.trend_empty')}</p>
+                                    <p className="text-sm mt-1">{t('detail.trend_empty_desc')}</p>
                                 </div>
                             )}
                         </div>
@@ -379,11 +381,11 @@ export default function ElderDetailPage() {
                     <div className="rounded-2xl bg-zinc-900 ring-1 ring-white/5 p-6 shadow-xl">
                         <h3 className="text-lg font-bold text-white mb-5 flex items-center gap-2">
                             <Clock className="text-indigo-400" size={20} />
-                            最近行為紀錄
+                            {t('detail.recent_title')}
                         </h3>
                         <div className="space-y-3">
                             {(!data.recent_events || data.recent_events.length === 0) ? (
-                                <p className="text-zinc-500 italic text-sm py-4">尚無一般活動記錄</p>
+                                <p className="text-zinc-500 italic text-sm py-4">{t('detail.recent_empty')}</p>
                             ) : (
                                 data.recent_events.slice(0, 10).map((event, idx) => (
                                     <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors">
@@ -392,8 +394,8 @@ export default function ElderDetailPage() {
                                                 <Activity size={14} className="text-indigo-400" />
                                             </div>
                                             <p className="text-sm text-white">
-                                                正在 <span className="text-indigo-400 capitalize">{event.activity_type}</span>
-                                                {event.object_interaction && <span className="text-zinc-500 text-xs"> (與 {event.object_interaction} 互動)</span>}
+                                                {t('detail.recent_doing')} <span className="text-indigo-400 capitalize">{event.activity_type}</span>
+                                                {event.object_interaction && <span className="text-zinc-500 text-xs"> ({t('detail.recent_interact')} {event.object_interaction} {t('detail.recent_interact_end')})</span>}
                                             </p>
                                         </div>
                                         <span className="text-xs text-zinc-500 shrink-0 ml-2">{formatDateTime(event.timestamp).slice(11)}</span>
@@ -409,13 +411,13 @@ export default function ElderDetailPage() {
                     <div className="rounded-2xl bg-zinc-900 ring-1 ring-rose-500/20 p-6 shadow-xl sticky top-8">
                         <h3 className="text-lg font-bold text-white mb-5 flex items-center gap-2">
                             <ShieldAlert className="text-rose-500" size={20} />
-                            異常事件歷史
+                            {t('detail.history_title')}
                         </h3>
                         <div className="space-y-4 overflow-y-auto max-h-[560px] pr-1">
                             {(!data.abnormal_events || data.abnormal_events.length === 0) ? (
                                 <div className="text-center py-12">
                                     <CheckCircle size={36} className="mx-auto text-emerald-500/20 mb-3" />
-                                    <p className="text-zinc-600 text-sm">一切正常，無異常記錄</p>
+                                    <p className="text-zinc-600 text-sm">{t('detail.history_empty')}</p>
                                 </div>
                             ) : (
                                 data.abnormal_events.map((event, idx) => (

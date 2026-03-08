@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import api from '../services/api';
-import { Plus, Trash2, Edit2, Check, X, Video } from 'lucide-react';
+import { Plus, Trash2, Edit2, Check, X, Video, RefreshCw } from 'lucide-react';
+import { useTranslation } from '../contexts/I18nContext';
 
 interface Camera {
     id: number;
@@ -30,6 +31,7 @@ export default function CamerasPage() {
 
     const [loading, setLoading] = useState(false);
     const [deleteModal, setDeleteModal] = useState<{ show: boolean; id: number | null }>({ show: false, id: null });
+    const { t } = useTranslation();
 
     const showToast = useCallback((message: string, type: 'success' | 'error') => setToast({ message, type }), []);
 
@@ -82,6 +84,18 @@ export default function CamerasPage() {
         }
     };
 
+    const handleRestart = async (id: number) => {
+        setLoading(true);
+        try {
+            await api.post(`/api/cameras/${id}/restart`);
+            showToast('已觸發重新連線', 'success');
+        } catch {
+            showToast('重新連線失敗', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const startEdit = (cam: Camera) => {
         setEditId(cam.id);
         setEditForm({ name: cam.name, source: cam.source, location: cam.location || '' });
@@ -110,14 +124,14 @@ export default function CamerasPage() {
 
             <div className="mb-8 flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-white mb-2">鏡頭管理</h1>
-                    <p className="text-zinc-400">新增、設定或刪除 IP 攝影機來源</p>
+                    <h1 className="text-2xl font-bold text-white mb-2">{t('cameras.title')}</h1>
+                    <p className="text-zinc-400">{t('cameras.subtitle')}</p>
                 </div>
                 <button
                     onClick={() => setShowAdd(!showAdd)}
                     className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium text-white transition-colors"
                 >
-                    <Plus size={16} /> 新增鏡頭
+                    <Plus size={16} /> {t('cameras.add')}
                 </button>
             </div>
 
@@ -207,10 +221,10 @@ export default function CamerasPage() {
                                     <div className="flex items-center gap-3 mb-1">
                                         <span className="font-semibold text-white text-sm">{cam.name}</span>
                                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all ${cam.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' :
-                                                cam.status === 'connecting' ? 'bg-amber-500/20 text-amber-400 animate-pulse' :
-                                                    'bg-zinc-700 text-zinc-400'
+                                            cam.status === 'connecting' ? 'bg-amber-500/20 text-amber-400 animate-pulse' :
+                                                'bg-zinc-700 text-zinc-400'
                                             }`}>
-                                            {cam.status === 'active' ? 'LIVE' : cam.status === 'connecting' ? 'CONNECTING' : 'OFFLINE'}
+                                            {cam.status === 'active' ? t('cameras.live') : cam.status === 'connecting' ? t('cameras.connecting') : t('cameras.offline')}
                                         </span>
                                         {cam.location && <span className="text-xs text-zinc-500">📍 {cam.location}</span>}
                                     </div>
@@ -225,8 +239,9 @@ export default function CamerasPage() {
                                     </>
                                 ) : (
                                     <>
-                                        <button onClick={() => startEdit(cam)} className="p-2 bg-zinc-800 hover:bg-indigo-500/20 rounded-lg text-zinc-400 hover:text-indigo-400 transition-colors"><Edit2 size={15} /></button>
-                                        <button onClick={() => setDeleteModal({ show: true, id: cam.id })} className="p-2 bg-zinc-800 hover:bg-rose-500/20 rounded-lg text-zinc-400 hover:text-rose-400 transition-colors"><Trash2 size={15} /></button>
+                                        <button onClick={() => handleRestart(cam.id)} className="p-2 bg-zinc-800 hover:bg-emerald-500/20 rounded-lg text-zinc-400 hover:text-emerald-400 transition-colors" title="重新連線"><RefreshCw size={15} /></button>
+                                        <button onClick={() => startEdit(cam)} className="p-2 bg-zinc-800 hover:bg-indigo-500/20 rounded-lg text-zinc-400 hover:text-indigo-400 transition-colors" title="編輯設定"><Edit2 size={15} /></button>
+                                        <button onClick={() => setDeleteModal({ show: true, id: cam.id })} className="p-2 bg-zinc-800 hover:bg-rose-500/20 rounded-lg text-zinc-400 hover:text-rose-400 transition-colors" title="移出鏡頭"><Trash2 size={15} /></button>
                                     </>
                                 )}
                             </div>

@@ -7,25 +7,28 @@ import ElderDetailPage from './pages/ElderDetail';
 import LogsPage from './pages/Logs';
 import CamerasPage from './pages/Cameras';
 import SettingsPage from './pages/Settings';
+import { I18nProvider } from './contexts/I18nContext';
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<Login />} />
+    <I18nProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
 
-        <Route element={<Layout />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/elders" element={<EldersPage />} />
-          <Route path="/elders/:id" element={<ElderDetailPage />} />
-          <Route path="/logs" element={<LogsPage />} />
-          <Route path="/cameras" element={<CamerasPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Route>
+          <Route element={<Layout />}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/elders" element={<EldersPage />} />
+            <Route path="/elders/:id" element={<ElderDetailPage />} />
+            <Route path="/logs" element={<LogsPage />} />
+            <Route path="/cameras" element={<CamerasPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </I18nProvider>
   );
 }
 

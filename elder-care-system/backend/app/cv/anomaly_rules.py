@@ -17,6 +17,7 @@ from .capture import pipeline
 class AnomalyRulesEngine:
     def __init__(self):
         self.last_alerts = {} # (resident_id, type) -> datetime
+        self.fall_states = {} # track_id -> dict {"start_time": dt, "center": (x,y)}
 
     def _should_trigger_alert(self, resident_id: int, alert_type: str, cooldown_seconds: int = 60) -> bool:
         """檢查是否超過冷卻時間，避免頻繁發送相同警報"""
@@ -28,27 +29,64 @@ class AnomalyRulesEngine:
             return True
         return False
 
-    def evaluate(self, resident_id: int, name: str, posture: str, object_interaction: str, frame, db: Session):
+    def evaluate(self, resident_id: int, name: str, posture: str, object_interaction: str, frame, db: Session, track=None):
         """
         每一幀都會呼叫這裡。
-        您可以根據 posture (姿勢), object_interaction (物件) 與歷史資料寫判斷邏輯。
+        針對 Fall 執行進階驗證：
+        1. Bounding box height drop (h < w)
+        2. Body horizontal angle (posture == "Lying")
+        3. Fall state duration > 3s
+        4. Stationary for 10s
         """
         if resident_id is None:
             return
 
         now = datetime.now()
         
-        # 🟢 Rule 1: 跌倒偵測 (Level 3 - 最高級別)
-        if posture == "Lying":
-            if self._should_trigger_alert(resident_id, "fall", cooldown_seconds=60):
-                self._trigger_event(
-                    db=db,
-                    resident_id=resident_id,
-                    level=3,
-                    event_type="fall",
-                    description=f"🚨 [緊急] 偵測到 {name} 有跌倒或不正常倒臥情況！",
-                    frame=frame
-                )
+        # 🟢 Rule 1: 進階跌倒偵測 (Level 3 - 最高級別)
+        if posture == "Lying" and track is not None:
+            tx1, ty1, tx2, ty2 = track.smoothed_bbox
+            cx, cy = (tx1 + tx2) / 2, (ty1 + ty2) / 2
+            w, h = (tx2 - tx1), (ty2 - ty1)
+            
+            # 條件1 & 2: 姿態水平且高度突降 (躺姿時寬度大於高度)
+            is_dropped = (h < w * 1.2) 
+            
+            if is_dropped:
+                if track.track_id not in self.fall_states:
+                    self.fall_states[track.track_id] = {
+                        "start_time": now,
+                        "center": (cx, cy)
+                    }
+                else:
+                    state = self.fall_states[track.track_id]
+                    duration = (now - state["start_time"]).total_seconds()
+                    
+                    old_cx, old_cy = state["center"]
+                    dist = ((cx - old_cx)**2 + (cy - old_cy)**2)**0.5
+                    
+                    # 條件4: 跌倒後是否未發生顯著移動 (dist < 40 pixels)
+                    if dist > 40:
+                        # 發生移動（掙扎或爬行），重新計算靜止時間
+                        state["start_time"] = now
+                        state["center"] = (cx, cy)
+                    elif duration >= 10:
+                        # 條件3 & 4 同時滿足：持續躺臥 10 秒且未移動 -> 觸發 CRITICAL
+                        if self._should_trigger_alert(resident_id, "fall", cooldown_seconds=60):
+                            self._trigger_event(
+                                db=db,
+                                resident_id=resident_id,
+                                level=3,
+                                event_type="fall",
+                                description=f"🚨 [緊急] 偵測到 {name} 發生跌倒，且連續 10 秒無移動跡象！",
+                                frame=frame
+                            )
+            else:
+                if track.track_id in self.fall_states:
+                    del self.fall_states[track.track_id]
+        else:
+            if track and track.track_id in self.fall_states:
+                del self.fall_states[track.track_id]
 
         # 🟡 Rule 2: 輪椅/危險物品 異常互動 (Level 2 - 中級)
         # 您可以在這裡加入例如: if object_interaction == "knife" 等判斷

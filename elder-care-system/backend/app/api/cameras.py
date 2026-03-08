@@ -51,3 +51,14 @@ def delete_camera(camera_id: int, db: Session = Depends(get_db), _=Depends(get_c
     db.delete(cam)
     db.commit()
     return {"message": "Camera deleted"}
+
+@router.post("/{camera_id}/restart")
+def restart_camera(camera_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+    cam = db.query(Camera).filter(Camera.id == camera_id).first()
+    if not cam:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    
+    from app.cv.capture import pipeline
+    if pipeline.active_camera_id == camera_id:
+        pipeline.update_source(cam.source, cam.id, force=True)
+    return {"message": "Camera restart triggered"}

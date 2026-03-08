@@ -4,6 +4,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, 
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from sqlalchemy.sql import func
 from dotenv import load_dotenv
+from datetime import datetime
 
 load_dotenv()
 
@@ -111,3 +112,12 @@ class SystemHealthLog(Base):
     module = Column(String(50), nullable=False) # camera, cv_model, line_bot, database
     status = Column(String(20), nullable=False) # ok, warning, error
     message = Column(Text, nullable=True)
+class SystemMetric(Base):
+    __tablename__ = "system_metrics"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.now)
+    ai_latency_ms = Column(Float, default=0.0) # AI 推論延遲
+    camera_fps = Column(Float, default=0.0)    # 實際讀取幀率
+    active_tracks = Column(Integer, default=0) # 追蹤中的目標數量
+    cpu_usage_percent = Column(Float, default=0.0) # 系統 CPU 使用率

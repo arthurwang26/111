@@ -80,7 +80,17 @@ class VideoCapturePipeline:
                 print(f"[Capture] 正在連線至來源: {self.source} ...")
                 self.status = "connecting"
                 self._update_db_status("connecting")
-                self.cap = cv2.VideoCapture(self.source)
+                
+                # [修復] 移除導致嚴重卡頓的實驗性低延遲參數，回退至穩定連線配置
+                if isinstance(self.source, str) and (self.source.startswith("rtsp://") or self.source.startswith("http://")):
+                    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
+                    self.cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
+                else:
+                    self.cap = cv2.VideoCapture(self.source)
+                    
+                # 設定超時 (非所有攝影機或 OpenCV 版本都支援，但可嘗試)
+                self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
+                self.cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000)
                 
                 if not self.cap.isOpened():
                     print(f"[Capture] 連線失敗: {self.source}")
@@ -110,7 +120,7 @@ class VideoCapturePipeline:
                 self.current_frame = frame
                 self.frame_buffer.append(frame.copy())
                 
-    def update_source(self, new_source, camera_id: int = None):
+    def update_source(self, new_source, camera_id: int = None, force: bool = False):
         # Normalize new_source
         try:
             val = int(new_source)
@@ -119,7 +129,7 @@ class VideoCapturePipeline:
             
         with self.lock:
             # 即使 source 相同，如果 camera_id 不同也要更新，以便同步狀態
-            if self.target_source == val and self.active_camera_id == camera_id:
+            if not force and self.target_source == val and self.active_camera_id == camera_id:
                 return
             print(f"[Capture] 安排切換來源: {self.target_source} (ID:{self.active_camera_id}) -> {val} (ID:{camera_id})")
             self.target_source = val

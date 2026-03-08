@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Outlet, Navigate, useNavigate, NavLink } from 'react-router-dom';
 import { ShieldCheck, Video, Users, Activity, LogOut, Settings, Camera, Menu, X } from 'lucide-react';
+import { useTranslation } from '../contexts/I18nContext';
 
 export default function Layout() {
     const navigate = useNavigate();
     const token = localStorage.getItem('token');
     const [sidebarOpen, setSidebarOpen] = useState(true);
+    const { t } = useTranslation();
 
     if (!token) {
         return <Navigate to="/login" replace />;
@@ -53,11 +55,11 @@ export default function Layout() {
                 </div>
 
                 <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-1">
-                    {navItem('/', Video, '即時監控')}
-                    {navItem('/elders', Users, '長者管理')}
-                    {navItem('/logs', Activity, '異常記錄')}
-                    {navItem('/cameras', Camera, '鏡頭管理')}
-                    {navItem('/settings', Settings, '系統設定')}
+                    {navItem('/', Video, t('nav.dashboard'))}
+                    {navItem('/elders', Users, t('nav.elders'))}
+                    {navItem('/logs', Activity, t('nav.logs'))}
+                    {navItem('/cameras', Camera, t('nav.cameras'))}
+                    {navItem('/settings', Settings, t('nav.settings'))}
                 </nav>
 
                 <div className="p-2 border-t border-zinc-800 bg-zinc-950">
@@ -68,7 +70,7 @@ export default function Layout() {
                     >
                         <LogOut className={`flex-shrink-0 ${sidebarOpen ? 'mr-3' : ''}`} size={20} />
                         <span className={`transition-all duration-200 overflow-hidden whitespace-nowrap ${sidebarOpen ? 'opacity-100 max-w-xs' : 'opacity-0 max-w-0'}`}>
-                            登出
+                            {t('nav.logout')}
                         </span>
                     </button>
                 </div>

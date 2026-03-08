@@ -103,11 +103,12 @@ class CVProcessor:
 
     def process_frame(self, frame: np.ndarray, db: Session):
         """
-        主處理入口
+        主處理入口 - 整合 Frame Sampling 與 Multi-Object Tracking
         """
+        import time
+        start_time = time.time()
         self._frame_count += 1
         
-        # [修復] 如果快取是空的，主動從資料庫載入
         if not self.registered_residents and self._frame_count % 100 == 1:
             self.refresh_residents(db)
 
@@ -116,57 +117,129 @@ class CVProcessor:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
             return frame, [], "Unknown"
 
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+
+        from .tracking import tracker
+
+        # 每 3 幀做一次 Full Detection (Detection Interval 節省 CPU)
+        run_detection = (self._frame_count % 3 == 1)
+        
+        active_tracks = []
+        object_interaction = self.detect_objects(frame)
         h, w = frame.shape[:2]
 
-        posture = "Unknown"
-        pose_result = self.pose_detector.detect(mp_image)
-        if pose_result.pose_landmarks:
-            for person_landmarks in pose_result.pose_landmarks:
-                posture = self.determine_posture(person_landmarks)
-                for lm in person_landmarks:
-                    cx, cy = int(lm.x * w), int(lm.y * h)
-                    cv2.circle(frame, (cx, cy), 4, (0, 255, 0), -1)
+        if run_detection:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+
+            # 1. Pose Detection (用以獲取人體姿態與整體 Bounding Box)
+            pose_result = self.pose_detector.detect(mp_image)
+            detections_bboxes = []
+            postures = []
+            
+            if pose_result.pose_landmarks:
+                for person_landmarks in pose_result.pose_landmarks:
+                    posture = self.determine_posture(person_landmarks)
+                    xs = [lm.x * w for lm in person_landmarks]
+                    ys = [lm.y * h for lm in person_landmarks]
+                    x1, y1 = max(0, min(xs)), max(0, min(ys))
+                    x2, y2 = min(w, max(xs)), min(h, max(ys))
+                    
+                    padding = 20
+                    detections_bboxes.append([max(0, x1-padding), max(0, y1-padding), min(w, x2+padding), min(h, y2+padding)])
+                    postures.append(posture)
+
+            # 2. Tracking 更新 (產生或關聯 Identity)
+            active_tracks = tracker.update(detections_bboxes, postures)
+
+            # 3. 臉部辨識 (ArcFace) 只對「尚未辨識出身份的 Track」執行
+            unidentified_tracks = [t for t in active_tracks if t.resident_id is None]
+            if unidentified_tracks:
+                face_result = self.face_detector.detect(mp_image)
+                if face_result.face_landmarks:
+                    for face_lms in face_result.face_landmarks:
+                        fxs = [lm.x * w for lm in face_lms]
+                        fys = [lm.y * h for lm in face_lms]
+                        fx1, fy1, fx2, fy2 = min(fxs), min(fys), max(fxs), max(fys)
+                        face_cx, face_cy = (fx1 + fx2) / 2, (fy1 + fy2) / 2
+                        
+                        # 把臉部分派給對應的 Track
+                        matched_track = None
+                        for trk in unidentified_tracks:
+                            tx1, ty1, tx2, ty2 = trk.smoothed_bbox
+                            # 若臉部中心點在人體框內
+                            if tx1 - 10 <= face_cx <= tx2 + 10 and ty1 - 10 <= face_cy <= ty2 + 10:
+                                matched_track = trk
+                                break
+                        
+                        if matched_track:
+                            emb_list = face_recognizer.extract_embedding(frame, face_lms)
+                            res_id, res_name = face_recognizer.match_face(emb_list, self.registered_residents)
+                            if res_id:
+                                matched_track.resident_id = res_id
+                                matched_track.resident_name = res_name
+        else:
+            # 非偵測幀，純預測追蹤框位置，平滑過渡
+            active_tracks = tracker.update([], [])
 
         recognized_names = []
-        face_result = self.face_detector.detect(mp_image)
-        object_interaction = self.detect_objects(frame)
-        
-        if face_result.face_landmarks:
-            for face_lms in face_result.face_landmarks:
-                emb = face_recognizer.extract_embedding(face_lms)
-                resident_id, name = face_recognizer.match_face(emb, self.registered_residents)
+        global_posture = "Unknown"
+        active_track_count = len(active_tracks)
+
+        # 4. 繪製平滑框與判定異常事件
+        for trk in active_tracks:
+            # 取得經 EMA 平滑化的 Track 框線
+            tx1, ty1, tx2, ty2 = map(int, trk.smoothed_bbox)
+            name = trk.resident_name
+            posture = trk.posture
+            
+            global_posture = posture if posture != "Unknown" else global_posture
+            if name != "Unknown":
                 recognized_names.append(name)
-                
-                # ------ 呼叫異常判斷引擎 ------
-                if resident_id:
-                    anomaly_engine.evaluate(resident_id, name, posture, object_interaction, frame, db)
-                    
-                    # [新增] 定期紀錄一般行為（用於生成活動圖表）
-                    # 每 300 幀紀錄一次，避免資料庫爆炸
-                    if getattr(self, '_frame_count', 0) % 300 == 0:
-                        from ..db import Event
+            
+            # 繪製平滑框 (大幅減少 UI Jitter)
+            color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
+            cv2.rectangle(frame, (tx1, ty1), (tx2, ty2), color, 2)
+            label = f"ID:{trk.track_id} {name} [{posture}]"
+            cv2.putText(frame, label, (tx1, max(20, ty1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+            
+            # 將完整的 Tracking Entity 餵給異常判斷引擎，以實作更嚴格的防誤報邏輯
+            if trk.resident_id:
+                anomaly_engine.evaluate(trk.resident_id, name, posture, object_interaction, frame, db, trk)
+
+                # 定期紀錄日常行為
+                if self._frame_count % 300 == 0:
+                    from ..db import Event
+                    try:
                         new_event = Event(
-                            resident_id=resident_id,
+                            resident_id=trk.resident_id,
                             activity_type=posture.lower(),
                             object_interaction=object_interaction if object_interaction else None,
                             description=f"偵測到 {name} 正在 {posture}"
                         )
                         db.add(new_event)
                         db.commit()
-                        print(f"[CV] 已紀錄 {name} 的行為: {posture}")
+                    except Exception as e:
+                        db.rollback()
 
-                # 繪製邊框
-                xs = [int(lm.x * w) for lm in face_lms]
-                ys = [int(lm.y * h) for lm in face_lms]
-                x1, y1, x2, y2 = min(xs), min(ys), max(xs), max(ys)
-                color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                label = f"{name} [{posture}]"
-                cv2.putText(frame, label, (x1, y1 - 8),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+        # 5. AI Inference Latency & Metrics Logging (每 300 幀記錄一次)
+        end_time = time.time()
+        latency_ms = (end_time - start_time) * 1000
+        
+        if self._frame_count % 300 == 0:
+            from ..db import SystemMetric
+            try:
+                # 簡單計算過去 300 幀的估計 FPS (不含 sleep)
+                approx_fps = 1000.0 / (latency_ms + 1e-5)
+                new_metric = SystemMetric(
+                    ai_latency_ms=latency_ms,
+                    camera_fps=approx_fps,
+                    active_tracks=active_track_count
+                )
+                db.add(new_metric)
+                db.commit()
+            except Exception as e:
+                db.rollback()
 
-        return frame, recognized_names, posture
+        return frame, recognized_names, global_posture
 
 processor = CVProcessor()

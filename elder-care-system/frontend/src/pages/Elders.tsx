@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Users, Plus, Trash2, ChevronRight, Upload, AlertCircle, CheckCircle, X } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import api from '../services/api';
+import { useTranslation } from '../contexts/I18nContext';
 
 type Elder = { id: number; name: string; room: string | null; created_at: string; has_embedding: boolean };
 
@@ -15,6 +16,7 @@ export default function EldersPage() {
     const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
     const [deleteModal, setDeleteModal] = useState<{ id: number; name: string } | null>(null);
     const [deleting, setDeleting] = useState(false);
+    const { t } = useTranslation();
 
     const location = useLocation();
 
@@ -107,47 +109,47 @@ export default function EldersPage() {
                 <div>
                     <h1 className="text-2xl font-bold text-white flex items-center gap-3">
                         <Users className="text-indigo-500" size={28} />
-                        長者管理
+                        {t('elders.title')}
                     </h1>
-                    <p className="text-zinc-400 mt-1">共 {elders.length} 位長者已登記</p>
+                    <p className="text-zinc-400 mt-1">{t('elders.subtitle').replace('{count}', elders.length.toString())}</p>
                 </div>
                 <button
                     onClick={() => { setShowForm(!showForm); setMsg(null); }}
                     className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors"
                 >
                     {showForm ? <X size={18} /> : <Plus size={18} />}
-                    {showForm ? '取消' : '新增長者'}
+                    {showForm ? t('elders.cancel') : t('elders.add')}
                 </button>
             </div>
 
             {/* 新增表單 */}
             {showForm && (
                 <div className="mb-8 rounded-xl bg-zinc-900 ring-1 ring-white/10 p-6">
-                    <h2 className="text-lg font-semibold text-white mb-4">新增長者資料</h2>
+                    <h2 className="text-lg font-semibold text-white mb-4">{t('elders.form_title')}</h2>
                     <form onSubmit={handleSubmit} className="space-y-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-sm font-medium text-zinc-300 mb-1">姓名 *</label>
+                                <label className="block text-sm font-medium text-zinc-300 mb-1">{t('elders.name')}</label>
                                 <input
                                     type="text" required value={name} onChange={e => setName(e.target.value)}
                                     className="w-full rounded-lg bg-zinc-800 border-0 ring-1 ring-zinc-700 py-2.5 px-4 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    placeholder="例：王大明"
+                                    placeholder={t('elders.name_ph')}
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-zinc-300 mb-1">房號</label>
+                                <label className="block text-sm font-medium text-zinc-300 mb-1">{t('elders.room')}</label>
                                 <input
                                     type="text" value={room} onChange={e => setRoom(e.target.value)}
                                     className="w-full rounded-lg bg-zinc-800 border-0 ring-1 ring-zinc-700 py-2.5 px-4 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    placeholder="例：101"
+                                    placeholder={t('elders.room_ph')}
                                 />
                             </div>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-zinc-300 mb-1">正面臉部照片（用於識別）</label>
+                            <label className="block text-sm font-medium text-zinc-300 mb-1">{t('elders.photo')}</label>
                             <label className="flex items-center gap-3 cursor-pointer rounded-lg bg-zinc-800 ring-1 ring-zinc-700 py-2.5 px-4 hover:ring-indigo-500 transition-all">
                                 <Upload size={18} className="text-zinc-400" />
-                                <span className="text-sm text-zinc-400">{photo ? photo.name : '點擊上傳照片（JPG/PNG）'}</span>
+                                <span className="text-sm text-zinc-400">{photo ? photo.name : t('elders.upload')}</span>
                                 <input type="file" accept="image/*" className="hidden" onChange={e => setPhoto(e.target.files?.[0] || null)} />
                             </label>
                         </div>
@@ -160,11 +162,11 @@ export default function EldersPage() {
                         <div className="flex gap-3">
                             <button type="submit" disabled={loading}
                                 className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-50 transition-colors">
-                                {loading ? '處理中...' : '確認登記'}
+                                {loading ? t('elders.processing') : t('elders.submit')}
                             </button>
                             <button type="button" onClick={() => setShowForm(false)}
                                 className="px-5 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors">
-                                取消
+                                {t('elders.cancel')}
                             </button>
                         </div>
                     </form>
@@ -183,7 +185,7 @@ export default function EldersPage() {
                 {elders.length === 0 ? (
                     <div className="text-center py-16 text-zinc-500">
                         <Users size={48} className="mx-auto mb-4 opacity-30" />
-                        <p>尚未登記任何長者，點擊「新增長者」開始。</p>
+                        <p>{t('elders.empty')}</p>
                     </div>
                 ) : (
                     elders.map(elder => (
@@ -200,7 +202,7 @@ export default function EldersPage() {
                                         <p className="font-semibold text-white group-hover:text-indigo-400 transition-colors">{elder.name}</p>
                                         <div className="flex items-center gap-2 mt-0.5">
                                             <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full ${!!elder.has_embedding ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400'}`}>
-                                                {!!elder.has_embedding ? <><CheckCircle size={10} /> 臉部識別已就緒</> : <>⚠ 未設定臉部資料</>}
+                                                {!!elder.has_embedding ? <><CheckCircle size={10} /> {t('elders.face_ready')}</> : <>⚠ {t('elders.face_none')}</>}
                                             </span>
                                             {elder.room && <span className="text-[10px] text-zinc-500">🏠 {elder.room}</span>}
                                             <span className="text-[10px] text-zinc-500">ID: #{elder.id}</span>
@@ -211,7 +213,7 @@ export default function EldersPage() {
                                     <button
                                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteModal({ id: elder.id, name: elder.name }); }}
                                         className="p-2 rounded-lg text-zinc-500 hover:bg-red-500/10 hover:text-red-400 transition-colors pointer-events-auto"
-                                        title="刪除長者"
+                                        title={t('elders.del_btn')}
                                     >
                                         <Trash2 size={18} />
                                     </button>

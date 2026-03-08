@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../services/api';
+import { useTranslation } from '../contexts/I18nContext';
 
 interface Camera {
     id: number;
@@ -70,7 +71,7 @@ function CamTile({ name, src, isMain, onClick }: { name: string; src?: string; i
                 <span className="px-2 py-1 rounded bg-black/60 text-white text-[10px] font-medium">{name}</span>
             </div>
             <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 rounded px-2 py-0.5 text-[10px] text-zinc-300">
-                🔍 點擊放大
+                {onClick !== undefined ? '🔍 Click / 點擊放大' : ''}
             </div>
         </div>
     );
@@ -83,8 +84,7 @@ export default function Dashboard() {
     const [selectedCamId, setSelectedCamId] = useState<number | null>(null);
     const [modalCam, setModalCam] = useState<{ src: string; name: string } | null>(null);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
-
-
+    const { t } = useTranslation();
 
     const baseUrl = `http://${window.location.hostname}:8000`;
 
@@ -137,13 +137,13 @@ export default function Dashboard() {
 
             <div className="mb-8 flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-white mb-2">Live Monitor</h1>
-                    <p className="text-zinc-400">Real-time anomaly detection streaming</p>
+                    <h1 className="text-2xl font-bold text-white mb-2">{t('dashboard.title')}</h1>
+                    <p className="text-zinc-400">{t('dashboard.subtitle')}</p>
                 </div>
                 {/* Camera Selector Dropdown */}
                 {cameras.length > 0 && (
                     <div className="flex items-center gap-3">
-                        <label className="text-sm text-zinc-400">主畫面：</label>
+                        <label className="text-sm text-zinc-400">{t('dashboard.main_cam')}</label>
                         <select
                             value={selectedCamId ?? ''}
                             onChange={e => setSelectedCamId(Number(e.target.value))}
@@ -209,11 +209,11 @@ export default function Dashboard() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="rounded-xl bg-zinc-900 ring-1 ring-white/5 p-6">
-                            <h3 className="text-sm font-medium text-zinc-400 mb-1">Active Residents</h3>
+                            <h3 className="text-sm font-medium text-zinc-400 mb-1">{t('dashboard.active_res')}</h3>
                             <p className="text-3xl font-semibold text-white">{elders.length}</p>
                         </div>
                         <div className="rounded-xl bg-zinc-900 ring-1 ring-white/5 p-6">
-                            <h3 className="text-sm font-medium text-zinc-400 mb-1">High Severity Anomalies (L3)</h3>
+                            <h3 className="text-sm font-medium text-zinc-400 mb-1">{t('dashboard.high_sev')}</h3>
                             <p className="text-3xl font-semibold text-rose-500">{events.filter(e => e.level === 3).length}</p>
                         </div>
                     </div>
@@ -222,13 +222,13 @@ export default function Dashboard() {
                 {/* Event Timeline */}
                 <div className="rounded-xl bg-zinc-900 ring-1 ring-white/5 flex flex-col h-[calc(100vh-12rem)]">
                     <div className="p-6 border-b border-white/5 flex items-center justify-between">
-                        <h2 className="text-lg font-semibold text-white">Event Timeline</h2>
-                        <span className="text-xs text-zinc-400 bg-zinc-800 px-2 py-1 rounded">Live Updates</span>
+                        <h2 className="text-lg font-semibold text-white">{t('dashboard.timeline')}</h2>
+                        <span className="text-xs text-zinc-400 bg-zinc-800 px-2 py-1 rounded">{t('dashboard.live_up')}</span>
                     </div>
                     <div className="flex-1 overflow-y-auto p-6">
                         <div className="space-y-6">
                             {events.length === 0 ? (
-                                <p className="text-center text-zinc-500 py-8">No recent events.</p>
+                                <p className="text-center text-zinc-500 py-8">{t('dashboard.no_events')}</p>
                             ) : (
                                 <div className="relative border-l border-zinc-700 ml-3 space-y-8">
                                     {events.map((event) => (
@@ -244,7 +244,7 @@ export default function Dashboard() {
                                                     </span>
                                                 </div>
                                                 <h4 className="text-sm font-medium text-white mt-1">
-                                                    Resident: <span className="font-semibold">{event.resident_name}</span>
+                                                    {t('dashboard.resident')} <span className="font-semibold">{event.resident_name}</span>
                                                 </h4>
                                                 <p className="text-sm text-zinc-400 leading-snug">{event.description}</p>
                                             </div>

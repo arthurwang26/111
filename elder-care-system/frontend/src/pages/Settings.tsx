@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
 import api from '../services/api';
+import { useTranslation } from '../contexts/I18nContext';
 import {
     Settings, Zap, MessageCircle, Camera, Link2, RefreshCw,
-    CheckCircle, XCircle, AlertTriangle, ExternalLink
+    CheckCircle, XCircle, AlertTriangle, ExternalLink, Globe
 } from 'lucide-react';
 
 function Toast({ message, type, onClose }: { message: string; type: 'success' | 'error' | 'info'; onClose: () => void }) {
@@ -20,6 +21,7 @@ export default function SettingsPage() {
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
     const [loading, setLoading] = useState<string | null>(null);
     const [healthResult, setHealthResult] = useState<{ ok: boolean; msg: string } | null>(null);
+    const { t, lang, setLang } = useTranslation();
 
     const showToast = useCallback((message: string, type: 'success' | 'error' | 'info') => setToast({ message, type }), []);
 
@@ -57,19 +59,41 @@ export default function SettingsPage() {
         }
     };
 
-    const apiBase = (api.defaults.baseURL || '').replace(/\/$/, '');
+    const apiBase = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/$/, '');
     const frontendUrl = window.location.origin;
 
+    // Language Support Hook
+    const handleLangChange = (newLang: string) => {
+        setLang(newLang as any);
+        showToast(newLang === 'en' ? 'Language switched' : '語言已切換', 'success');
+    };
+
     return (
-        <div className="p-8 h-full overflow-y-auto max-w-4xl">
+        <div className="p-8 h-full overflow-y-auto w-full max-w-5xl">
             {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
 
-            <div className="mb-8">
-                <h1 className="text-2xl font-bold text-white mb-2 flex items-center gap-3">
-                    <Settings size={26} className="text-indigo-400" />
-                    系統設定
-                </h1>
-                <p className="text-zinc-400">系統控制台、測試工具、分享網址</p>
+            <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-white mb-2 flex items-center gap-3">
+                        <Settings size={26} className="text-indigo-400" />
+                        {t('settings.title')}
+                    </h1>
+                    <p className="text-zinc-400">{t('settings.subtitle')}</p>
+                </div>
+
+                {/* 語言選單 */}
+                <div className="flex items-center gap-3 bg-zinc-900 border border-zinc-700 px-4 py-2.5 rounded-xl">
+                    <Globe size={18} className="text-zinc-400" />
+                    <span className="text-sm text-zinc-300 font-medium">{t('settings.lang')}</span>
+                    <select
+                        value={lang}
+                        onChange={(e) => handleLangChange(e.target.value)}
+                        className="bg-zinc-800 text-sm text-white rounded-lg px-3 py-1.5 border border-zinc-700 focus:outline-none focus:border-indigo-500"
+                    >
+                        <option value="zh-TW">中文 (繁體)</option>
+                        <option value="en">English (US)</option>
+                    </select>
+                </div>
             </div>
 
             {/* 公開分享網址 */}

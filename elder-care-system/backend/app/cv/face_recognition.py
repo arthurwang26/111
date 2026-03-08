@@ -1,67 +1,110 @@
-# [檔案用途：核心 人臉辨識模組] (⭐️負責辨識的同學請專注修改此檔案⭐️)
+# [檔案用途：核心 人臉辨識模組] 
 """
-臉部辨識模組 (V2)
-您可以將這部分替換為更精準的模型 (例如 ArcFace, Dlib 等)
-目前預設：使用 MediaPipe FaceLandmarker Pseudo-embeddings
+臉部辨識模組 (V2 - ArcFace Upgrade)
+使用直接下載的 InsightFace pre-trained ONNX 模型 (w600k_r50.onnx)，
+提供極高精度的 512-d embeddings 比對。
 """
+import os
+import cv2
 import numpy as np
+import onnxruntime as ort
 from scipy.spatial.distance import cosine
+
+# 預設 112x112 臉部五官對齊標準點 (由 InsightFace 論文定義)
+arcface_src = np.array([
+    [38.2946, 51.6963],
+    [73.5318, 51.5014],
+    [56.0252, 71.7366],
+    [41.5493, 92.3655],
+    [70.7299, 92.2041]
+], dtype=np.float32)
 
 class FaceRecognizer:
     def __init__(self):
-        # 提高閾值，因為歸一化後特徵會更接近
-        self.threshold = 0.75
+        self.threshold = 0.48  # ArcFace 嚴格餘弦相似度閥值，通常 > 0.45 即為極高信心度
+        model_path = os.getenv("ARCFACE_MODEL_PATH", r"C:\elder_care_models\buffalo_l\w600k_r50.onnx")
+        
+        try:
+            self.session = ort.InferenceSession(model_path, providers=['CPUExecutionProvider'])
+            self.input_name = self.session.get_inputs()[0].name
+            self._ready = True
+            print("[Face] ArcFace ONNX Model (w600k_r50.onnx) 載入成功！")
+        except Exception as e:
+            print(f"[Face] ArcFace 模型載入失敗: {e}")
+            self._ready = False
 
-    def _normalize_landmarks(self, face_landmarks) -> np.ndarray:
+    def align_face(self, img_bgr: np.ndarray, mediapipe_landmarks) -> np.ndarray:
         """
-        將臉部特徵點進行歸一化：
-        1. 以鼻尖(landmark 1)為中心
-        2. 以兩眼距離為縮放基準
+        透過 MediaPipe 提供的特徵點，計算放射變換矩陣，將人臉裁切並擺正至 112x112。
         """
-        pts = np.array([[lm.x, lm.y, lm.z] for lm in face_landmarks])
+        h, w = img_bgr.shape[:2]
+        # 對應的五官：右眼(33), 左眼(263), 鼻尖(1), 右嘴角(61), 左嘴角(291)
+        pts = np.array([
+            [mediapipe_landmarks[33].x * w, mediapipe_landmarks[33].y * h],
+            [mediapipe_landmarks[263].x * w, mediapipe_landmarks[263].y * h],
+            [mediapipe_landmarks[1].x * w, mediapipe_landmarks[1].y * h],
+            [mediapipe_landmarks[61].x * w, mediapipe_landmarks[61].y * h],
+            [mediapipe_landmarks[291].x * w, mediapipe_landmarks[291].y * h]
+        ], dtype=np.float32)
+
+        # 計算放射變換矩陣
+        tform, _ = cv2.estimateAffinePartial2D(pts, arcface_src)
+        if tform is None:
+            return None
         
-        # 1. 平移：以鼻尖為座標原點 (Landmark 1 通常是鼻尖)
-        nose = pts[1]
-        pts = pts - nose
-        
-        # 2. 縮放：計算兩眼距離 (Landmark 33 號左右與 263 號左右分別是兩眼)
-        eye1 = pts[33]
-        eye2 = pts[263]
-        dist = np.linalg.norm(eye1 - eye2)
-        
-        if dist > 0:
-            pts = pts / dist
+        # 將臉部圖像裁切對齊至 (112, 112)
+        aligned_img = cv2.warpAffine(img_bgr, tform, (112, 112))
+        return aligned_img
+
+    def extract_embedding(self, img_bgr: np.ndarray, mediapipe_landmarks) -> np.ndarray:
+        """
+        獲得對正的臉部後，輸入 ArcFace 提取 512 維身份特徵向量。
+        """
+        if not self._ready or img_bgr is None:
+            return np.zeros(512, dtype=np.float32).tolist()
             
-        return pts.flatten()
+        aligned = self.align_face(img_bgr, mediapipe_landmarks)
+        if aligned is None:
+            return np.zeros(512, dtype=np.float32).tolist()
 
-    def extract_embedding(self, face_landmarks) -> np.ndarray:
-        """
-        從 FaceLandmarker 結果提取歸一化後的 embedding。
-        """
-        flat = self._normalize_landmarks(face_landmarks)
-        # 取前 512 維 (Landmarks 有 478 點 -> 1434 維)
-        if len(flat) >= 512:
-            return flat[:512]
-        return np.pad(flat, (0, 512 - len(flat)), "constant")
+        # ArcFace 預處理: BGR轉RGB -> 歸一化 [-1, 1] -> 通道轉置 (C, H, W)
+        aligned = cv2.cvtColor(aligned, cv2.COLOR_BGR2RGB)
+        aligned = (aligned.astype(np.float32) - 127.5) / 127.5
+        aligned = np.transpose(aligned, (2, 0, 1))
+        input_tensor = np.expand_dims(aligned, axis=0)
 
-    def match_face(self, embedding: np.ndarray, registered_residents: list):
+        # ONNX 推論提取 512-d 特徵
+        embedding = self.session.run(None, {self.input_name: input_tensor})[0][0]
+        
+        # 進行 L2 正規化 (Cosine similarity 必須在正規化向量上才準確)
+        norm = np.linalg.norm(embedding)
+        if norm > 0:
+            embedding = embedding / norm
+            
+        return embedding.tolist()
+
+    def match_face(self, embedding_list: list, registered_residents: list):
         """
-        以餘弦相似度比對，回傳 (resident_id, name)。
+        以 ArcFace 512 維基準，進行餘弦相似度對比。
         """
-        if not registered_residents:
+        if not registered_residents or not self._ready:
             return None, "Unknown"
             
+        embedding = np.array(embedding_list, dtype=np.float32)
+        
+        # 若是全零陣列(辨識失敗或防護)，跳過比對
+        if np.all(embedding == 0):
+            return None, "Unknown"
+
         best_id, best_name, best_sim = None, "Unknown", -1
         for resident in registered_residents:
-            res_emb = np.array(resident["embedding"])
+            res_emb = np.array(resident["embedding"], dtype=np.float32)
             sim = 1 - cosine(embedding, res_emb)
-            # [LOG] 記錄每一位匹配過的相似度，方便調優
-            print(f"[Debug-Face] 比對 {resident['name']} 目標相似度: {sim:.4f}")
             if sim > best_sim:
                 best_sim, best_id, best_name = sim, resident["id"], resident["name"]
         
         if best_sim >= self.threshold:
-            print(f"[Face] !!! 匹配成功: {best_name} (相似度: {best_sim:.4f}) !!!")
+            print(f"[Face-ArcFace] 身份匹配成功: {best_name} (信心度: {best_sim:.4f})")
             return best_id, best_name
             
         return None, "Unknown"

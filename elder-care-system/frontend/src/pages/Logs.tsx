@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Activity, Search, AlertTriangle, Flame, Info, CheckCircle, ExternalLink } from 'lucide-react';
 import api from '../services/api';
+import { useTranslation } from '../contexts/I18nContext';
 
 type Event = {
     id: number; type: string; level: number;
@@ -25,6 +26,7 @@ export default function LogsPage() {
     const [filter, setFilter] = useState<'ALL' | 3 | 2 | 1>('ALL');
     const [showResolved, setShowResolved] = useState(false);
     const [search, setSearch] = useState('');
+    const { t } = useTranslation();
 
     const fetchEvents = async () => {
         try {
@@ -43,7 +45,7 @@ export default function LogsPage() {
         try {
             await api.patch(`/api/events/${id}/resolve`);
             fetchEvents();
-        } catch { alert('更新狀態失敗'); }
+        } catch { alert(t('logs.update_fail')); }
     };
 
     const getSnapshotUrl = (path?: string) => {
@@ -66,13 +68,13 @@ export default function LogsPage() {
                 <div className="flex items-center gap-3">
                     <Activity className="text-rose-400" size={28} />
                     <div>
-                        <h1 className="text-2xl font-bold text-white">異常事件記錄 (Abnormal Events)</h1>
-                        <p className="text-zinc-400 mt-0.5">待處理：{events.filter(e => !e.is_resolved).length} 筆</p>
+                        <h1 className="text-2xl font-bold text-white">{t('logs.title')}</h1>
+                        <p className="text-zinc-400 mt-0.5">{t('logs.pending')}{events.filter(e => !e.is_resolved).length} {t('logs.count')}</p>
                     </div>
                 </div>
                 <label className="flex items-center gap-2 cursor-pointer bg-zinc-900 px-3 py-2 rounded-lg ring-1 ring-white/5">
                     <input type="checkbox" checked={showResolved} onChange={e => setShowResolved(e.target.checked)} className="rounded bg-zinc-800 border-zinc-700 text-indigo-500" />
-                    <span className="text-sm text-zinc-300">顯示已處理事件</span>
+                    <span className="text-sm text-zinc-300">{t('logs.show_resolved')}</span>
                 </label>
             </div>
 
@@ -82,7 +84,7 @@ export default function LogsPage() {
                     <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
                     <input
                         value={search} onChange={e => setSearch(e.target.value)}
-                        placeholder="搜尋事件描述..."
+                        placeholder={t('logs.search')}
                         className="w-full pl-9 pr-4 py-2 rounded-lg bg-zinc-800 ring-1 ring-zinc-700 text-white text-sm placeholder:text-zinc-500 focus:ring-indigo-500 focus:outline-none"
                     />
                 </div>
@@ -90,7 +92,7 @@ export default function LogsPage() {
                     <button key={s} onClick={() => setFilter(s)}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === s ? 'bg-indigo-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:text-white'
                             }`}>
-                        {s === 'ALL' ? '全部層級' : `Level ${s}`}
+                        {s === 'ALL' ? t('logs.all_levels') : `Level ${s}`}
                     </button>
                 ))}
             </div>
@@ -100,7 +102,7 @@ export default function LogsPage() {
                 {filtered.length === 0 ? (
                     <div className="text-center py-16 text-zinc-500">
                         <Activity size={48} className="mx-auto mb-4 opacity-30" />
-                        <p>目前沒有符合條件的事件</p>
+                        <p>{t('logs.empty')}</p>
                     </div>
                 ) : (
                     filtered.map(event => (
@@ -117,7 +119,7 @@ export default function LogsPage() {
                                         </span>
                                         {event.is_resolved === 1 && (
                                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-500/10 text-emerald-400">
-                                                <CheckCircle size={12} /> 已處理
+                                                <CheckCircle size={12} /> {t('logs.resolved')}
                                             </span>
                                         )}
                                     </div>
@@ -131,7 +133,7 @@ export default function LogsPage() {
                                         onClick={() => handleResolve(event.id)}
                                         className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600 hover:text-white text-xs font-bold transition-all"
                                     >
-                                        <CheckCircle size={14} /> 標註已處理
+                                        <CheckCircle size={14} /> {t('logs.mark_resolved')}
                                     </button>
                                 )}
                             </div>

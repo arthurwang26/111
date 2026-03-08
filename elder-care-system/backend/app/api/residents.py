@@ -54,9 +54,9 @@ def _extract_embedding_from_image(image_bytes: bytes) -> list:
             print("[Embedding] 偵測不到臉部")
             return []
 
-        # 使用統一的 FaceRecognizer 進行特徵提取
-        emb = face_recognizer.extract_embedding(result.face_landmarks[0])
-        return emb.tolist()
+        # 使用統一的 FaceRecognizer 進行 ArcFace 特徵提取
+        emb_list = face_recognizer.extract_embedding(bgr, result.face_landmarks[0])
+        return emb_list
     except Exception as e:
         print(f"[Embedding] 提取失敗: {e}")
         return []
