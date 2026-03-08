@@ -63,11 +63,8 @@ def _extract_embedding_from_image(image_bytes: bytes) -> list:
 
 @router.get("")
 def list_residents(db: Session = Depends(get_db), _=Depends(get_current_user)):
-    print("DEBUG: list_residents called!")
     residents = db.query(models.Resident).all()
-    results = [{"id": r.id, "name": r.name, "room": r.room, "created_at": r.created_at, "has_embedding": bool(r.face_embedding), "DEBUG_TEST": "yes"} for r in residents]
-    print("DEBUG: returning", results)
-    return results
+    return [{"id": r.id, "name": r.name, "room": r.room, "created_at": r.created_at, "has_embedding": bool(r.face_embedding)} for r in residents]
 
 @router.post("")
 def create_resident(

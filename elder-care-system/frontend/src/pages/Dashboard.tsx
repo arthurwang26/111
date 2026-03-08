@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import api from '../services/api';
 
 interface Camera {
@@ -84,7 +84,7 @@ export default function Dashboard() {
     const [modalCam, setModalCam] = useState<{ src: string; name: string } | null>(null);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
-    const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => setToast({ message, type }), []);
+
 
     const baseUrl = `http://${window.location.hostname}:8000`;
 
@@ -114,12 +114,14 @@ export default function Dashboard() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const getStreamUrl = (cam?: Camera) => {
+    const getStreamUrl = (cam?: Camera, isMain: boolean = false) => {
         if (!cam) return null;
+        if (cam.status === 'offline' || cam.status === 'connecting') {
+            return null; // Don't try to stream from offline/connecting cameras
+        }
         const src = cam.source.trim();
-        // Always route through backend to ensure Ngrok/Public access works 
-        // and to keep the AI processing focused on the currently viewed camera.
-        return `${baseUrl}/video/stream?source=${encodeURIComponent(src)}`;
+        const endpoint = isMain ? '/video/stream' : '/video/proxy';
+        return `${baseUrl}${endpoint}?source=${encodeURIComponent(src)}&camera_id=${cam.id}`;
     };
 
     const selectedCam = cameras.find(c => c.id === selectedCamId);
@@ -162,7 +164,7 @@ export default function Dashboard() {
                         {selectedCam ? (
                             <CamTile
                                 name={`${selectedCam.name} (Main)`}
-                                src={getStreamUrl(selectedCam) ?? undefined}
+                                src={getStreamUrl(selectedCam, true) ?? undefined}
                                 isMain
                                 onClick={() => {
                                     const url = getStreamUrl(selectedCam);

@@ -24,12 +24,9 @@ export default function SettingsPage() {
     const showToast = useCallback((message: string, type: 'success' | 'error' | 'info') => setToast({ message, type }), []);
 
     // Fetch current ngrok URL from backend
-    const [ngrokUrl, setNgrokUrl] = useState<string>('');
     useEffect(() => {
         api.get('/api/test/health').then(() => {
-            // Backend is reachable — get its base URL
-            const base = (api.defaults.baseURL || window.location.origin.replace('5173', '8000'));
-            setNgrokUrl(base || '');
+            // Backend is reachable
         }).catch(() => { });
     }, []);
 

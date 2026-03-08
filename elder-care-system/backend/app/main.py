@@ -19,10 +19,13 @@ from app.services.system_health import health_monitor
 async def lifespan(app: FastAPI):
     # Startup: Load registered residents into CV processor and start background tasks
     health_monitor.start()
+    poll_thread = None
+    running = [True]
     try:
         from app.cv.processor import processor
         from app.cv.capture import pipeline
-        from app.db import SessionLocal
+        from app.db import SessionLocal, Camera
+        import cv2, threading, time
         
         # 啟動非阻塞影像擷取
         pipeline.start()
@@ -30,11 +33,47 @@ async def lifespan(app: FastAPI):
         db = SessionLocal()
         processor.refresh_residents(db)
         db.close()
+
+        # Background Camera Poller
+        def poll_cameras():
+            while running[0]:
+                try:
+                    with SessionLocal() as db_session:
+                        cameras = db_session.query(Camera).all()
+                        for cam in cameras:
+                            if not running[0]: break
+                            if cam.id == pipeline.active_camera_id:
+                                continue # Main pipeline updates this
+                            
+                            idx_or_str = cam.source
+                            try: idx_or_str = int(idx_or_str)
+                            except: pass
+
+                            cap = cv2.VideoCapture(idx_or_str)
+                            is_opened = cap.isOpened()
+                            if is_opened:
+                                if cam.status != "active":
+                                    cam.status = "active"
+                                    db_session.commit()
+                                cap.release()
+                            else:
+                                if cam.status != "offline":
+                                    cam.status = "offline"
+                                    db_session.commit()
+                except Exception as e:
+                    print(f"[Poller] Error: {e}")
+                time.sleep(15)
+
+        poll_thread = threading.Thread(target=poll_cameras, daemon=True)
+        poll_thread.start()
+
     except Exception as e:
         print(f"[Startup] CV 初始化: {e}")
     yield  # 應用程式運行中
     # Shutdown
     health_monitor.stop()
+    running[0] = False
+    if poll_thread: poll_thread.join(timeout=2)
 
 app = FastAPI(
     title="Elderly Long-term Care API",

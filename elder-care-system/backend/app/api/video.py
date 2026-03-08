@@ -7,6 +7,7 @@ from ..cv.capture import pipeline
 from ..cv.processor import processor
 import cv2
 import asyncio
+import time
 
 router = APIRouter(prefix="/video", tags=["Video Stream"])
 
@@ -44,6 +45,68 @@ async def frame_generator(db: Session):
     except asyncio.CancelledError:
         # Client disconnected
         pass
+
+@router.get("/proxy")
+def proxy_stream(source: str, camera_id: int = None):
+    """Direct MJPEG proxy without AI processing, preventing pipeline conflicts, and updates camera status."""
+    def gen():
+        # Handle webcam indices
+        try:
+            val = int(source)
+        except (ValueError, TypeError):
+            val = source
+            
+        from ..db import SessionLocal, Camera
+
+        if camera_id:
+            with SessionLocal() as db_session:
+                cam = db_session.query(Camera).filter(Camera.id == camera_id).first()
+                if cam and cam.status != "connecting":
+                    cam.status = "connecting"
+                    db_session.commit()
+
+        cap = cv2.VideoCapture(val)
+        try:
+            if not cap.isOpened():
+                if camera_id:
+                    with SessionLocal() as db_session:
+                        cam = db_session.query(Camera).filter(Camera.id == camera_id).first()
+                        if cam and cam.status != "offline":
+                            cam.status = "offline"
+                            db_session.commit()
+                return
+
+            if camera_id:
+                with SessionLocal() as db_session:
+                    cam = db_session.query(Camera).filter(Camera.id == camera_id).first()
+                    if cam and cam.status != "active":
+                        cam.status = "active"
+                        db_session.commit()
+
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    if camera_id:
+                        with SessionLocal() as db_session:
+                            cam = db_session.query(Camera).filter(Camera.id == camera_id).first()
+                            if cam and cam.status != "offline":
+                                cam.status = "offline"
+                                db_session.commit()
+                    break
+                # Resize to save bandwidth for grid views
+                frame = cv2.resize(frame, (640, 360))
+                ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
+                if not ret:
+                    continue
+                yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+                time.sleep(1/30)
+        finally:
+            cap.release()
+
+    return StreamingResponse(
+        gen(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
 
 @router.get("/stream")
 def video_stream(source: str = None, camera_id: int = None, db: Session = Depends(get_db)):
