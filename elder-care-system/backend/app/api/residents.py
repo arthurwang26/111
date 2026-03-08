@@ -17,10 +17,12 @@ from ..db import get_db
 from .. import db as models
 from .auth import get_current_user
 
+from ..cv.face_recognition import face_recognizer
+
 router = APIRouter(prefix="/api/residents", tags=["Residents"])
 
 def _extract_embedding_from_image(image_bytes: bytes) -> list:
-    """從上傳的照片提取 512 維 face embedding（使用 FaceLandmarker）。"""
+    """從上傳的照片提取歸一化後的 face embedding。"""
     try:
         import mediapipe as mp
         from mediapipe.tasks import python as mp_python
@@ -29,6 +31,9 @@ def _extract_embedding_from_image(image_bytes: bytes) -> list:
         import os
 
         FACE_MODEL = r"C:\elder_care_models\face_landmarker.task"
+        if not os.path.exists(FACE_MODEL):
+            print(f"[Embedding] 模型路徑不存在: {FACE_MODEL}")
+            return []
 
         face_opts = mp_python.BaseOptions(model_asset_path=FACE_MODEL)
         face_options = mp_vision.FaceLandmarkerOptions(
@@ -46,20 +51,11 @@ def _extract_embedding_from_image(image_bytes: bytes) -> list:
 
         result = detector.detect(mp_image)
         if not result.face_landmarks:
+            print("[Embedding] 偵測不到臉部")
             return []
 
-        pts = np.array([[lm.x, lm.y, lm.z] for lm in result.face_landmarks[0]])
-        flat = pts.flatten()
-        if len(flat) >= 512:
-            emb = flat[:512]
-        else:
-            emb = np.pad(flat, (0, 512 - len(flat)), "constant")
-
-        # Normalize
-        norm = np.linalg.norm(emb)
-        if norm > 0:
-            emb = emb / norm
-
+        # 使用統一的 FaceRecognizer 進行特徵提取
+        emb = face_recognizer.extract_embedding(result.face_landmarks[0])
         return emb.tolist()
     except Exception as e:
         print(f"[Embedding] 提取失敗: {e}")
@@ -67,8 +63,11 @@ def _extract_embedding_from_image(image_bytes: bytes) -> list:
 
 @router.get("")
 def list_residents(db: Session = Depends(get_db), _=Depends(get_current_user)):
+    print("DEBUG: list_residents called!")
     residents = db.query(models.Resident).all()
-    return [{"id": r.id, "name": r.name, "room": r.room, "created_at": r.created_at, "has_embedding": bool(r.face_embedding)} for r in residents]
+    results = [{"id": r.id, "name": r.name, "room": r.room, "created_at": r.created_at, "has_embedding": bool(r.face_embedding), "DEBUG_TEST": "yes"} for r in residents]
+    print("DEBUG: returning", results)
+    return results
 
 @router.post("")
 def create_resident(
@@ -169,6 +168,39 @@ def update_resident(
 
     db.commit()
     return {"id": resident.id, "name": resident.name}
+
+@router.post("/{resident_id}/photo")
+def upload_resident_photo(
+    resident_id: int,
+    photo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """獨立上傳/更換長者臉部照片端點。"""
+    resident = db.query(models.Resident).filter(models.Resident.id == resident_id).first()
+    if not resident:
+        raise HTTPException(status_code=404, detail="找不到此長者")
+
+    image_bytes = photo.file.read()
+    embedding = _extract_embedding_from_image(image_bytes)
+
+    if not embedding:
+        raise HTTPException(
+            status_code=422,
+            detail="無法從照片中偵測到臉部，請換一張正面清晰的照片"
+        )
+
+    resident.face_embedding = embedding
+    db.commit()
+
+    # 刷新 CV 處理器的長者快取
+    try:
+        from ..cv.processor import processor
+        processor.refresh_residents(db)
+    except Exception:
+        pass
+
+    return {"success": True, "message": f"{resident.name} 的臉部特徵已成功更新"}
 
 @router.delete("/{resident_id}")
 def delete_resident(resident_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):

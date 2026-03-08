@@ -3,7 +3,10 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import EldersPage from './pages/Elders';
+import ElderDetailPage from './pages/ElderDetail';
 import LogsPage from './pages/Logs';
+import CamerasPage from './pages/Cameras';
+import SettingsPage from './pages/Settings';
 
 function App() {
   return (
@@ -14,8 +17,10 @@ function App() {
         <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/elders" element={<EldersPage />} />
+          <Route path="/elders/:id" element={<ElderDetailPage />} />
           <Route path="/logs" element={<LogsPage />} />
-          <Route path="/settings" element={<div className="p-8 text-zinc-400">系統設定（即將推出）</div>} />
+          <Route path="/cameras" element={<CamerasPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

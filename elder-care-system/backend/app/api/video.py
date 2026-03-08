@@ -46,8 +46,28 @@ async def frame_generator(db: Session):
         pass
 
 @router.get("/stream")
-def video_stream(db: Session = Depends(get_db)):
-    """MJPEG stream endpoint for the Dashboard."""
+def video_stream(source: str = None, camera_id: int = None, db: Session = Depends(get_db)):
+    """MJPEG stream endpoint. Supports 'camera_id' or 'source' to switch camera."""
+    target_id = camera_id
+    target_source = source
+
+    # 如果只有 source，嘗試查找 camera_id
+    if not target_id and target_source:
+        from ..db import Camera
+        cam = db.query(Camera).filter(Camera.source == target_source).first()
+        if cam:
+            target_id = cam.id
+
+    # 如果只有 camera_id，查找 source
+    if target_id and not target_source:
+        from ..db import Camera
+        cam = db.query(Camera).filter(Camera.id == target_id).first()
+        if cam:
+            target_source = cam.source
+
+    if target_source:
+        pipeline.update_source(target_source, camera_id=target_id)
+        
     return StreamingResponse(
         frame_generator(db),
         media_type="multipart/x-mixed-replace; boundary=frame"

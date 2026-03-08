@@ -27,6 +27,7 @@ FACE_MODEL = os.path.join(_BASE, "face_landmarker.task")
 class CVProcessor:
     def __init__(self):
         self.registered_residents: list = []
+        self._frame_count = 0
         self._init_models()
 
     def _init_models(self):
@@ -102,12 +103,14 @@ class CVProcessor:
 
     def process_frame(self, frame: np.ndarray, db: Session):
         """
-        主處理入口：
-        1. 執行姿態辨識
-        2. 執行臉部辨識
-        3. 執行異常判定 (anomaly_rules.py)
-        4. 繪製標注
+        主處理入口
         """
+        self._frame_count += 1
+        
+        # [修復] 如果快取是空的，主動從資料庫載入
+        if not self.registered_residents and self._frame_count % 100 == 1:
+            self.refresh_residents(db)
+
         if not self._ready:
             cv2.putText(frame, "Mock CV Mode (模型未就緒)", (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
@@ -139,6 +142,20 @@ class CVProcessor:
                 # ------ 呼叫異常判斷引擎 ------
                 if resident_id:
                     anomaly_engine.evaluate(resident_id, name, posture, object_interaction, frame, db)
+                    
+                    # [新增] 定期紀錄一般行為（用於生成活動圖表）
+                    # 每 300 幀紀錄一次，避免資料庫爆炸
+                    if getattr(self, '_frame_count', 0) % 300 == 0:
+                        from ..db import Event
+                        new_event = Event(
+                            resident_id=resident_id,
+                            activity_type=posture.lower(),
+                            object_interaction=object_interaction if object_interaction else None,
+                            description=f"偵測到 {name} 正在 {posture}"
+                        )
+                        db.add(new_event)
+                        db.commit()
+                        print(f"[CV] 已紀錄 {name} 的行為: {posture}")
 
                 # 繪製邊框
                 xs = [int(lm.x * w) for lm in face_lms]

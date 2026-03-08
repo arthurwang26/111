@@ -21,7 +21,12 @@ async def lifespan(app: FastAPI):
     health_monitor.start()
     try:
         from app.cv.processor import processor
+        from app.cv.capture import pipeline
         from app.db import SessionLocal
+        
+        # 啟動非阻塞影像擷取
+        pipeline.start()
+        
         db = SessionLocal()
         processor.refresh_residents(db)
         db.close()
@@ -46,7 +51,7 @@ app.include_router(cameras_router.router)
 app.include_router(events_router.router)
 app.include_router(tests_router.router)
 
-app.mount("/static/snapshots", StaticFiles(directory="snapshots"), name="snapshots")
+app.mount("/snapshots", StaticFiles(directory="snapshots"), name="snapshots")
 
 # Allow React frontend to access the API
 origins = [
@@ -54,11 +59,13 @@ origins = [
     "http://localhost:5174", # Vite fallback
     "http://0.0.0.0:5173",
     "http://127.0.0.1:5173",
+    "https://*.ngrok-free.app",  # Ngrok public URL
+    "https://*.ngrok.io",
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],  # 開放全部，方便同學分享
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

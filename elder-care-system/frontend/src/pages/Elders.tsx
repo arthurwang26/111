@@ -1,16 +1,22 @@
 import { useState, useEffect } from 'react';
-import { Users, Plus, Trash2, ChevronRight, Upload, AlertCircle, CheckCircle } from 'lucide-react';
+import { Users, Plus, Trash2, ChevronRight, Upload, AlertCircle, CheckCircle, X } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
 import api from '../services/api';
 
-type Elder = { id: number; name: string; created_at: string; has_embedding: boolean };
+type Elder = { id: number; name: string; room: string | null; created_at: string; has_embedding: boolean };
 
 export default function EldersPage() {
     const [elders, setElders] = useState<Elder[]>([]);
     const [showForm, setShowForm] = useState(false);
     const [name, setName] = useState('');
+    const [room, setRoom] = useState('');
     const [photo, setPhoto] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
     const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+    const [deleteModal, setDeleteModal] = useState<{ id: number; name: string } | null>(null);
+    const [deleting, setDeleting] = useState(false);
+
+    const location = useLocation();
 
     const fetchElders = async () => {
         try {
@@ -19,7 +25,15 @@ export default function EldersPage() {
         } catch { setElders([]); }
     };
 
-    useEffect(() => { fetchElders(); }, []);
+    // 每次導覽回此頁都重新整理
+    useEffect(() => { fetchElders(); }, [location.key]);
+
+    // 使用者切換分頁回來時重新整理
+    useEffect(() => {
+        const onVisible = () => { if (document.visibilityState === 'visible') fetchElders(); };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => document.removeEventListener('visibilitychange', onVisible);
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -28,26 +42,67 @@ export default function EldersPage() {
         try {
             const fd = new FormData();
             fd.append('name', name);
+            if (room.trim()) fd.append('room', room.trim());
             if (photo) fd.append('photo', photo);
             await api.post('/api/residents', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
             setMsg({ type: 'ok', text: `${name} 已成功登記！` });
-            setName(''); setPhoto(null); setShowForm(false);
+            setName(''); setRoom(''); setPhoto(null); setShowForm(false);
             fetchElders();
         } catch (err: any) {
             setMsg({ type: 'err', text: err.response?.data?.detail || '登記失敗，請重試' });
         } finally { setLoading(false); }
     };
 
-    const handleDelete = async (id: number, elderName: string) => {
-        if (!confirm(`確定要刪除長者「${elderName}」？`)) return;
+    const confirmDelete = async () => {
+        if (!deleteModal) return;
+        setDeleting(true);
         try {
-            await api.delete(`/api/residents/${id}`);
+            await api.delete(`/api/residents/${deleteModal.id}`);
+            setDeleteModal(null);
             fetchElders();
-        } catch { alert('刪除失敗'); }
+        } catch {
+            setDeleteModal(null);
+            setMsg({ type: 'err', text: '刪除失敗，請重試' });
+        } finally { setDeleting(false); }
     };
 
     return (
         <div className="p-8 max-w-5xl mx-auto">
+            {/* 刪除確認 Modal */}
+            {deleteModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+                    <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 rounded-lg bg-rose-500/10">
+                                <Trash2 size={20} className="text-rose-400" />
+                            </div>
+                            <h3 className="text-lg font-bold text-white">確認刪除</h3>
+                        </div>
+                        <p className="text-zinc-400 text-sm mb-6">
+                            確定要刪除長者「<span className="text-white font-semibold">{deleteModal.name}</span>」？
+                            此操作無法復原，所有相關記錄也會一併刪除。
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={confirmDelete}
+                                disabled={deleting}
+                                className="flex-1 px-4 py-2.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-medium text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                                {deleting && <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                                {deleting ? '刪除中...' : '確認刪除'}
+                            </button>
+                            <button
+                                onClick={() => setDeleteModal(null)}
+                                disabled={deleting}
+                                className="flex-1 px-4 py-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium text-sm transition-colors"
+                            >
+                                取消
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="flex items-center justify-between mb-8">
                 <div>
                     <h1 className="text-2xl font-bold text-white flex items-center gap-3">
@@ -60,7 +115,8 @@ export default function EldersPage() {
                     onClick={() => { setShowForm(!showForm); setMsg(null); }}
                     className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors"
                 >
-                    <Plus size={18} /> 新增長者
+                    {showForm ? <X size={18} /> : <Plus size={18} />}
+                    {showForm ? '取消' : '新增長者'}
                 </button>
             </div>
 
@@ -69,13 +125,23 @@ export default function EldersPage() {
                 <div className="mb-8 rounded-xl bg-zinc-900 ring-1 ring-white/10 p-6">
                     <h2 className="text-lg font-semibold text-white mb-4">新增長者資料</h2>
                     <form onSubmit={handleSubmit} className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-zinc-300 mb-1">姓名 *</label>
-                            <input
-                                type="text" required value={name} onChange={e => setName(e.target.value)}
-                                className="w-full rounded-lg bg-zinc-800 border-0 ring-1 ring-zinc-700 py-2.5 px-4 text-white placeholder:text-zinc-500 focus:ring-2 focus:ring-indigo-500"
-                                placeholder="例：王大明"
-                            />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-zinc-300 mb-1">姓名 *</label>
+                                <input
+                                    type="text" required value={name} onChange={e => setName(e.target.value)}
+                                    className="w-full rounded-lg bg-zinc-800 border-0 ring-1 ring-zinc-700 py-2.5 px-4 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="例：王大明"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-zinc-300 mb-1">房號</label>
+                                <input
+                                    type="text" value={room} onChange={e => setRoom(e.target.value)}
+                                    className="w-full rounded-lg bg-zinc-800 border-0 ring-1 ring-zinc-700 py-2.5 px-4 text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="例：101"
+                                />
+                            </div>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-zinc-300 mb-1">正面臉部照片（用於識別）</label>
@@ -86,8 +152,7 @@ export default function EldersPage() {
                             </label>
                         </div>
                         {msg && (
-                            <div className={`flex items-center gap-2 p-3 rounded-lg text-sm ${msg.type === 'ok' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                                }`}>
+                            <div className={`flex items-center gap-2 p-3 rounded-lg text-sm ${msg.type === 'ok' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
                                 {msg.type === 'ok' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
                                 {msg.text}
                             </div>
@@ -106,6 +171,13 @@ export default function EldersPage() {
                 </div>
             )}
 
+            {msg && !showForm && (
+                <div className={`mb-4 flex items-center gap-2 p-3 rounded-lg text-sm ${msg.type === 'ok' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                    {msg.type === 'ok' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
+                    {msg.text}
+                </div>
+            )}
+
             {/* 長者清單 */}
             <div className="space-y-3">
                 {elders.length === 0 ? (
@@ -116,31 +188,35 @@ export default function EldersPage() {
                 ) : (
                     elders.map(elder => (
                         <div key={elder.id}
-                            className="flex items-center justify-between p-5 rounded-xl bg-zinc-900 ring-1 ring-white/5 hover:ring-white/10 transition-all">
-                            <div className="flex items-center gap-4">
-                                <div className="h-12 w-12 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold text-lg">
-                                    {elder.name[0]}
-                                </div>
-                                <div>
-                                    <p className="font-semibold text-white">{elder.name}</p>
-                                    <div className="flex items-center gap-2 mt-0.5">
-                                        <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${elder.has_embedding ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400'
-                                            }`}>
-                                            {elder.has_embedding ? <><CheckCircle size={10} /> 臉部已設定</> : <>⚠ 未設定臉部</>}
-                                        </span>
-                                        <span className="text-xs text-zinc-500">
-                                            登記日：{new Date(elder.created_at).toLocaleDateString('zh-TW')}
-                                        </span>
+                            className="group relative p-5 rounded-xl bg-zinc-900 ring-1 ring-white/5 hover:ring-indigo-500/50 hover:bg-zinc-800/50 transition-all"
+                        >
+                            <Link to={`/elders/${elder.id}`} className="absolute inset-0 z-10" />
+                            <div className="flex items-center justify-between relative z-0">
+                                <div className="flex items-center gap-4">
+                                    <div className="h-12 w-12 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold text-lg">
+                                        {elder.name[0]}
+                                    </div>
+                                    <div>
+                                        <p className="font-semibold text-white group-hover:text-indigo-400 transition-colors">{elder.name}</p>
+                                        <div className="flex items-center gap-2 mt-0.5">
+                                            <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full ${!!elder.has_embedding ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400'}`}>
+                                                {!!elder.has_embedding ? <><CheckCircle size={10} /> 臉部識別已就緒</> : <>⚠ 未設定臉部資料</>}
+                                            </span>
+                                            {elder.room && <span className="text-[10px] text-zinc-500">🏠 {elder.room}</span>}
+                                            <span className="text-[10px] text-zinc-500">ID: #{elder.id}</span>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => handleDelete(elder.id, elder.name)}
-                                    className="p-2 rounded-lg text-zinc-500 hover:bg-red-500/10 hover:text-red-400 transition-colors">
-                                    <Trash2 size={18} />
-                                </button>
-                                <ChevronRight size={18} className="text-zinc-600" />
+                                <div className="flex items-center gap-2 relative z-20">
+                                    <button
+                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteModal({ id: elder.id, name: elder.name }); }}
+                                        className="p-2 rounded-lg text-zinc-500 hover:bg-red-500/10 hover:text-red-400 transition-colors pointer-events-auto"
+                                        title="刪除長者"
+                                    >
+                                        <Trash2 size={18} />
+                                    </button>
+                                    <ChevronRight size={18} className="text-zinc-600 group-hover:text-indigo-400" />
+                                </div>
                             </div>
                         </div>
                     ))
