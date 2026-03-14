@@ -30,21 +30,35 @@ if "%NGROK_EXE%"=="" (
     )
 )
 
-:: 2. 檢查並編譯前端 (如果 dist 不存在)
+:: [2/4] 檢查並初始化環境 (Node/Python)
 echo.
-echo [2/4] Checking Frontend Build...
+echo [2/4] Checking environment dependencies...
+
+:: 檢查前端 node_modules
+if not exist "%FRONTEND_DIR%\node_modules" (
+    echo [DETECT] Missing frontend dependencies (node_modules).
+    echo Running 'npm install' for you. Please wait...
+    cd /d "%FRONTEND_DIR%"
+    call npm install
+)
+
+:: 檢查後端 venv
+if not exist "%BACKEND_DIR%\venv" (
+    echo [DETECT] Missing Python Virtual Environment (venv).
+    echo Creating venv and installing AI dependencies... This may take a few minutes.
+    cd /d "%BACKEND_DIR%"
+    python -m venv venv
+    call "%BACKEND_DIR%\venv\Scripts\activate.bat"
+    pip install -r requirements.txt
+)
+
+:: 檢查並編譯前端 (如果 dist 不存在)
+echo.
+echo Checking Frontend Build...
 if not exist "%FRONTEND_DIR%\dist" (
-    echo Building frontend...
-    cd "%FRONTEND_DIR%"
+    echo [DETECT] No production build found. Building frontend...
+    cd /d "%FRONTEND_DIR%"
     call npm run build
-    if %errorlevel% neq 0 (
-        echo Error building frontend. Please check your Vite/React setup.
-        pause
-        exit /b %errorlevel%
-    )
-    echo Frontend build complete.
-) else (
-    echo Frontend build already exists in %FRONTEND_DIR%\dist. Skipping build...
 )
 
 :: 3. 啟動後端伺服器 (靜態掛載 Frontend)
