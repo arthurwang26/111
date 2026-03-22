@@ -15,32 +15,24 @@ async def frame_generator(db: Session):
     # Ensure camera is running
     if not pipeline.running:
         pipeline.start()
-        
-    # Reload residents into cv cache
-    processor.refresh_residents(db)
 
     try:
+        last_count = -1
         while True:
-            frame = pipeline.get_frame()
-            if frame is None:
+            result = pipeline.get_encoded_frame()
+            if result is None:
                 await asyncio.sleep(0.1)
                 continue
                 
-            # Process the frame with AI
-            processed_frame, names, posture = processor.process_frame(frame, db)
-            
-            # Encode frame as JPEG
-            ret, buffer = cv2.imencode('.jpg', processed_frame)
-            if not ret:
-                continue
-                
-            frame_bytes = buffer.tobytes()
-            # Yield as multipart stream
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            encoded_frame, current_count = result
+            if encoded_frame is not None and current_count > last_count:
+                last_count = current_count
+                # Yield as multipart stream
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + encoded_frame + b'\r\n')
                    
-            # Limit framerate
-            await asyncio.sleep(1/30) # ~30 FPS max
+            # Check faster but only yield on new frame
+            await asyncio.sleep(0.02)
             
     except asyncio.CancelledError:
         # Client disconnected
@@ -50,6 +42,19 @@ async def frame_generator(db: Session):
 def proxy_stream(source: str, camera_id: int = None):
     """Direct MJPEG proxy without AI processing, preventing pipeline conflicts, and updates camera status."""
     def gen():
+        # 如果前端偷偷嘗試透過 proxy 取得主畫面的影像(可能因為放大的 BUG)，強制攔截並提供目前已處理好、有骨架的快取，確保完全不卡頓
+        if camera_id is not None and pipeline.active_camera_id == camera_id:
+            last_count = -1
+            while True:
+                result = pipeline.get_encoded_frame()
+                if result is not None:
+                    encoded_frame, current_count = result
+                    if encoded_frame is not None and current_count > last_count:
+                        last_count = current_count
+                        yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + encoded_frame + b'\r\n')
+                time.sleep(0.02)
+            return
+
         # Handle webcam indices
         try:
             val = int(source)

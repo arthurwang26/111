@@ -115,10 +115,54 @@ class VideoCapturePipeline:
                 time.sleep(2)
                 continue
                 
+            # 限制本地影片檔的播放速度，避免 CPU 全速跑完導致前端來不及顯示，與異常時間判定失效
+            if isinstance(self.source, str) and not (self.source.startswith("http") or self.source.startswith("rtsp")):
+                time.sleep(1.0 / self.fps)
+                
             self.status = "active"
+
+            # 3. 在背景執行緒中直接進行 AI 推理，確保全域只執行一次，大幅降低 CPU 負載！
+            from .processor import processor
+            from ..db import SessionLocal
+            
+            db = SessionLocal()
+            try:
+                processed_frame, names, posture = processor.process_frame(frame, db)
+                
+                # 為了避免高畫質推流造成瀏覽器 DOM 卡死與網路塞車，大幅縮放畫面尺寸
+                h, w = processed_frame.shape[:2]
+                target_w = 854
+                target_h = int(h * (target_w / w))
+                stream_frame = cv2.resize(processed_frame, (target_w, target_h))
+                
+                ret, buffer = cv2.imencode('.jpg', stream_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
+                if ret:
+                    encoded_frame = buffer.tobytes()
+                else:
+                    encoded_frame = None
+            except Exception as e:
+                import traceback
+                print(f"[Capture] 推理發生錯誤: {e}")
+                traceback.print_exc()
+                processed_frame = frame
+                # 就算發生錯誤，依然原圖直出給串流，避免前端無法連線！
+                h, w = frame.shape[:2]
+                target_w = 854
+                target_h = int(h * (target_w / w))
+                stream_frame = cv2.resize(frame, (target_w, target_h))
+                ret, buffer = cv2.imencode('.jpg', stream_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
+                if ret:
+                    encoded_frame = buffer.tobytes()
+                else:
+                    encoded_frame = None
+            finally:
+                db.close()
+                
             with self.lock:
-                self.current_frame = frame
-                self.frame_buffer.append(frame.copy())
+                self.current_frame = processed_frame
+                self.current_encoded_frame = encoded_frame
+                self.frame_count += 1
+                self.frame_buffer.append(processed_frame.copy())
                 
     def update_source(self, new_source, camera_id: int = None, force: bool = False):
         # Normalize new_source
@@ -128,13 +172,14 @@ class VideoCapturePipeline:
             val = new_source
             
         with self.lock:
-            # 即使 source 相同，如果 camera_id 不同也要更新，以便同步狀態
             if not force and self.target_source == val and self.active_camera_id == camera_id:
                 return
             print(f"[Capture] 安排切換來源: {self.target_source} (ID:{self.active_camera_id}) -> {val} (ID:{camera_id})")
             self.target_source = val
             self.active_camera_id = camera_id
             self.current_frame = None
+            self.current_encoded_frame = None
+            self.frame_count = 0
             self.frame_buffer.clear()
 
     def get_frame(self):
@@ -142,6 +187,10 @@ class VideoCapturePipeline:
             if self.current_frame is not None:
                 return self.current_frame.copy()
             return None
+
+    def get_encoded_frame(self):
+        with self.lock:
+            return self.current_encoded_frame, self.frame_count
 
     def save_clip_async(self, filepath: str, post_event_seconds: int = 10):
         """

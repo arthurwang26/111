@@ -21,7 +21,7 @@ arcface_src = np.array([
 
 class FaceRecognizer:
     def __init__(self):
-        self.threshold = 0.48  # ArcFace 嚴格餘弦相似度閥值，通常 > 0.45 即為極高信心度
+        self.threshold = 0.38  # 從 0.48 降為 0.38，允許一般畫質或側臉也能順利完成第一次比對
         model_path = os.getenv("ARCFACE_MODEL_PATH", r"C:\elder_care_models\buffalo_l\w600k_r50.onnx")
         
         try:

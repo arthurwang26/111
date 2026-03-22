@@ -1,90 +1,79 @@
 @echo off
 setlocal
+
+:: Set UTF-8 for better character handling
+chcp 65001 >nul
+
 echo ========================================================
 echo   Elder Care System V2 Public Server Launcher
 echo ========================================================
 
-:: 定義路徑
+:: Define Paths
+set "ROOT_DIR=%~dp0"
 set "FRONTEND_DIR=%~dp0frontend"
 set "BACKEND_DIR=%~dp0backend"
 
-:: [1/4] 從 .env 讀取 Ngrok 設定
-echo [1/4] Reading Ngrok configuration from .env...
+:: [1/4] Reading Ngrok configuration
+echo [1/4] Checking Ngrok configuration in .env...
 set "NGROK_EXE="
 set "NGROK_TOKEN="
 
 if exist "%BACKEND_DIR%\.env" (
-    for /f "tokens=1,2 delims==" %%a in ('findstr /r "^NGROK_EXE_PATH= ^NGROK_AUTHTOKEN=" "%BACKEND_DIR%\.env"') do (
+    for /f "usebackq tokens=1,2 delims==" %%a in ("%BACKEND_DIR%\.env") do (
         if "%%a"=="NGROK_EXE_PATH" set "NGROK_EXE=%%b"
         if "%%a"=="NGROK_AUTHTOKEN" set "NGROK_TOKEN=%%b"
     )
 )
 
-:: 自動尋找 Ngrok.exe 邏輯
+:: Auto-detect Ngrok location
 if "%NGROK_EXE%"=="" (
     where /q ngrok
-    if %errorlevel% equ 0 (
+    if not errorlevel 1 (
         set "NGROK_EXE=ngrok"
-    ) else if exist "%~dp0ngrok.exe" (
-        set "NGROK_EXE=%~dp0ngrok.exe"
+    ) else if exist "%ROOT_DIR%ngrok.exe" (
+        set "NGROK_EXE=%ROOT_DIR%ngrok.exe"
     )
 )
 
-:: [2/4] 檢查並初始化環境 (Node/Python)
+:: [2/4] Checking Frontend Build
 echo.
-echo [2/4] Checking environment dependencies...
-
-:: 檢查前端 node_modules
-if not exist "%FRONTEND_DIR%\node_modules" (
-    echo [DETECT] Missing frontend dependencies (node_modules).
-    echo Running 'npm install' for you. Please wait...
-    cd /d "%FRONTEND_DIR%"
-    call npm install
-)
-
-:: 檢查後端 venv
-if not exist "%BACKEND_DIR%\venv" (
-    echo [DETECT] Missing Python Virtual Environment (venv).
-    echo Creating venv and installing AI dependencies... This may take a few minutes.
-    cd /d "%BACKEND_DIR%"
-    python -m venv venv
-    call "%BACKEND_DIR%\venv\Scripts\activate.bat"
-    pip install -r requirements.txt
-)
-
-:: 檢查並編譯前端 (如果 dist 不存在)
-echo.
-echo Checking Frontend Build...
+echo [2/4] Checking Frontend Build...
 if not exist "%FRONTEND_DIR%\dist" (
-    echo [DETECT] No production build found. Building frontend...
+    echo [INFO] No production build found. Building frontend...
     cd /d "%FRONTEND_DIR%"
     call npm run build
+    if errorlevel 1 (
+        echo [ERROR] Frontend build failed.
+        pause
+        exit /b 1
+    )
+) else (
+    echo [INFO] Frontend build already exists.
 )
 
-:: 3. 啟動後端伺服器 (靜態掛載 Frontend)
+:: [3/4] Starting Backend Server
 echo.
 echo [3/4] Starting Backend Server (FastAPI on Port 8000)...
-cd "%BACKEND_DIR%"
+cd /d "%BACKEND_DIR%"
+:: Use cmd /c to ensure it doesn't block
 start "Elder Care Backend" cmd /c "call venv\Scripts\activate.bat && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
-:: 4. 等待後端啟動
-timeout /t 5 /nobreak >nul
-
-:: 5. 啟動 Ngrok
+:: [4/4] Starting Ngrok Tunnel
 echo.
 echo [4/4] Starting Ngrok Tunnel...
+timeout /t 5 /nobreak >nul
+
 if not "%NGROK_EXE%"=="" (
     if not "%NGROK_TOKEN%"=="" (
-        echo Configuring Ngrok authentication...
         "%NGROK_EXE%" config add-authtoken %NGROK_TOKEN%
     )
     echo Starting Ngrok on port 8000...
     "%NGROK_EXE%" http 8000
 ) else (
-    echo WARNING: ngrok.exe not found. 
-    echo Please install ngrok, set it in backend/.env, or place it in the project root.
+    echo [WARNING] ngrok.exe not found. 
+    echo Please install ngrok or set NGROK_EXE_PATH in backend/.env.
     pause
 )
 
-echo Done! The server should be running publically.
+echo Done! Server is running.
 pause

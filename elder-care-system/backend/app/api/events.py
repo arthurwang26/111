@@ -23,6 +23,33 @@ def get_abnormal_events(limit: int = 50, db: Session = Depends(get_db), _=Depend
             "snapshot_path": e.snapshot_path
         })
     return res
+@router.delete("/clear_test")
+def clear_test_events(db: Session = Depends(get_db)):
+    """清除所有測試或未辨識人物的事件"""
+    try:
+        events_to_delete = db.query(AbnormalEvent).filter(
+            (AbnormalEvent.resident_id == None) |
+            (AbnormalEvent.description.like("%測試%")) |
+            (AbnormalEvent.description.like("%test%"))
+        ).all()
+        count = len(events_to_delete)
+        for e in events_to_delete:
+            db.delete(e)
+        db.commit()
+        return {"message": f"Successfully deleted {count} test events."}
+    except Exception as e:
+        db.rollback()
+        return {"error": str(e)}
+
+@router.delete("/{event_id}")
+def delete_event(event_id: int, db: Session = Depends(get_db)):
+    """手動刪除單筆事件"""
+    event = db.query(AbnormalEvent).filter(AbnormalEvent.id == event_id).first()
+    if event:
+        db.delete(event)
+        db.commit()
+        return {"message": "Deleted"}
+    return {"error": "Not found"}
 
 @router.get("/daily")
 def get_daily_activities(limit: int = 50, db: Session = Depends(get_db), _=Depends(get_current_user)):

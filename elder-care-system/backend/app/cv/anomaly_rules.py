@@ -29,6 +29,37 @@ class AnomalyRulesEngine:
             return True
         return False
 
+    def determine_posture_yolo(self, keypoints_17x3, box) -> str:
+        if keypoints_17x3 is None or len(keypoints_17x3) < 17:
+            return "Unknown"
+        
+        x1, y1, x2, y2 = box
+        w, h = (x2 - x1), (y2 - y1)
+        
+        if w > h * 1.2:
+            return "Lying"
+            
+        # COCO Format
+        # Shoulders: 5 (Left), 6 (Right)
+        # Hips: 11 (Left), 12 (Right)
+        ls, rs = keypoints_17x3[5], keypoints_17x3[6]
+        lh, rh = keypoints_17x3[11], keypoints_17x3[12]
+        
+        # Check confidences
+        if all(pt[2] > 0.5 for pt in [ls, rs, lh, rh]):
+            avg_shoulder_y = (ls[1] + rs[1]) / 2
+            avg_hip_y = (lh[1] + rh[1]) / 2
+            
+            # Simple rule based on absolute pixels (since y is unnormalized)
+            head_to_hip = abs(avg_hip_y - avg_shoulder_y)
+            if head_to_hip < h * 0.4:
+                # Thorax is compressed -> likely sitting or bent over
+                return "Sitting"
+            else:
+                return "Standing"
+                
+        return "Unknown"
+
     def evaluate(self, resident_id: int, name: str, posture: str, object_interaction: str, frame, db: Session, track=None):
         """
         每一幀都會呼叫這裡。
@@ -70,15 +101,15 @@ class AnomalyRulesEngine:
                         # 發生移動（掙扎或爬行），重新計算靜止時間
                         state["start_time"] = now
                         state["center"] = (cx, cy)
-                    elif duration >= 10:
-                        # 條件3 & 4 同時滿足：持續躺臥 10 秒且未移動 -> 觸發 CRITICAL
+                    elif duration >= 2:
+                        # 條件3 & 4 同時滿足：持續躺臥 2 秒且未移動 -> 觸發 CRITICAL
                         if self._should_trigger_alert(resident_id, "fall", cooldown_seconds=60):
                             self._trigger_event(
                                 db=db,
                                 resident_id=resident_id,
                                 level=3,
                                 event_type="fall",
-                                description=f"🚨 [緊急] 偵測到 {name} 發生跌倒，且連續 10 秒無移動跡象！",
+                                description=f"🚨 [測試] 偵測到 {name} 發生跌倒，且連續 2 秒無移動跡象！",
                                 frame=frame
                             )
             else:

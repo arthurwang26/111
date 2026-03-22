@@ -124,6 +124,29 @@ export default function Dashboard() {
         return `${baseUrl}${endpoint}?source=${encodeURIComponent(src)}&camera_id=${cam.id}`;
     };
 
+    const handleClearTestEvents = async () => {
+        if (!window.confirm("確定要刪除所有「未指示別」與「測試」事件嗎？（已綁定長者的真實事件將保留）")) return;
+        try {
+            const res = await api.delete('/api/events/clear_test');
+            setToast({ message: res.data.message || '已清除測試事件', type: 'success' });
+            const eventsRes = await api.get('/api/events/abnormal');
+            setEvents(eventsRes.data);
+        } catch (err) {
+            setToast({ message: '清除失敗', type: 'error' });
+        }
+    };
+
+    const handleDeleteEvent = async (id: number) => {
+        if (!window.confirm("確定要刪除這筆單一事件嗎？")) return;
+        try {
+            await api.delete(`/api/events/${id}`);
+            setToast({ message: '事件已刪除', type: 'success' });
+            setEvents(prev => prev.filter(e => e.id !== id));
+        } catch (err) {
+            setToast({ message: '刪除失敗', type: 'error' });
+        }
+    };
+
     const selectedCam = cameras.find(c => c.id === selectedCamId);
     const otherCams = cameras.filter(c => c.id !== selectedCamId).slice(0, 3);
 
@@ -167,8 +190,8 @@ export default function Dashboard() {
                                 src={getStreamUrl(selectedCam, true) ?? undefined}
                                 isMain
                                 onClick={() => {
-                                    const url = getStreamUrl(selectedCam);
-                                    if (url) setModalCam({ src: url, name: selectedCam.name });
+                                    const url = getStreamUrl(selectedCam, true);
+                                    if (url) setModalCam({ src: url + `&_t=${Date.now()}`, name: selectedCam.name });
                                 }}
                             />
                         ) : (
@@ -223,7 +246,12 @@ export default function Dashboard() {
                 <div className="rounded-xl bg-zinc-900 ring-1 ring-white/5 flex flex-col h-[calc(100vh-12rem)]">
                     <div className="p-6 border-b border-white/5 flex items-center justify-between">
                         <h2 className="text-lg font-semibold text-white">{t('dashboard.timeline')}</h2>
-                        <span className="text-xs text-zinc-400 bg-zinc-800 px-2 py-1 rounded">{t('dashboard.live_up')}</span>
+                        <div className="flex items-center gap-2">
+                            <button onClick={handleClearTestEvents} className="text-xs text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-500/30 px-2 py-1.5 rounded transition-colors flex items-center gap-1">
+                                🗑️ 清除測試事件
+                            </button>
+                            <span className="text-xs text-zinc-400 bg-zinc-800 px-2 py-1.5 rounded">{t('dashboard.live_up')}</span>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-y-auto p-6">
                         <div className="space-y-6">
@@ -232,13 +260,22 @@ export default function Dashboard() {
                             ) : (
                                 <div className="relative border-l border-zinc-700 ml-3 space-y-8">
                                     {events.map((event) => (
-                                        <div key={event.id} className="relative pl-6">
+                                        <div key={event.id} className="relative pl-6 group">
                                             <span className={`absolute -left-[5px] top-1 w-2.5 h-2.5 rounded-full ring-4 ring-zinc-900 ${event.level === 3 ? 'bg-rose-500' : event.level === 2 ? 'bg-amber-500' : 'bg-indigo-500'}`} />
                                             <div className="flex flex-col gap-1">
                                                 <div className="flex items-center justify-between">
-                                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${event.level === 3 ? 'bg-rose-500/20 text-rose-400' : event.level === 2 ? 'bg-amber-500/20 text-amber-400' : 'bg-indigo-500/20 text-indigo-400'}`}>
-                                                        {event.type}
-                                                    </span>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${event.level === 3 ? 'bg-rose-500/20 text-rose-400' : event.level === 2 ? 'bg-amber-500/20 text-amber-400' : 'bg-indigo-500/20 text-indigo-400'}`}>
+                                                            {event.type}
+                                                        </span>
+                                                        <button 
+                                                            onClick={() => handleDeleteEvent(event.id)} 
+                                                            className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-500 hover:text-rose-400 text-xs px-1"
+                                                            title="刪除此筆事件"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    </div>
                                                     <span className="text-xs text-zinc-500">
                                                         {new Date(event.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                     </span>

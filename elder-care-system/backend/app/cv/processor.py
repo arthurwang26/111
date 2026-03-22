@@ -1,14 +1,9 @@
-# [檔案用途：核心 AI 處理與姿勢辨識] (⭐️負責辨識的兩位同學請專注修改此檔案⭐️ 可以自由調整跌倒判斷邏輯和閾值)
-"""
-CV 處理器 - 使用 mediapipe.tasks Vision API（新版，0.10.x 相容）
-支援：
-  - 姿態辨識 (PoseLandmarker) → 跌倒偵測
-  - 臉部辨識 (FaceLandmarker) → 長者識別（embedding 比對）
-"""
-
+# [檔案用途：核心 AI 處理與姿勢辨識]
 import os
 import cv2
 import numpy as np
+from ultralytics import YOLO
+
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
@@ -21,32 +16,28 @@ from .face_recognition import face_recognizer
 from .anomaly_rules import anomaly_engine
 
 _BASE = os.getenv("MODEL_PATH", r"C:\elder_care_models" if os.name == 'nt' else "/app/models")
-POSE_MODEL = os.path.join(_BASE, "pose_landmarker_heavy.task")
 FACE_MODEL = os.path.join(_BASE, "face_landmarker.task")
+YOLO_MODEL = os.path.join(_BASE, "yolov8n-pose.pt")
+
+class TrackedPerson:
+    def __init__(self, track_id, bbox, posture):
+        self.track_id = track_id
+        self.smoothed_bbox = bbox
+        self.posture = posture
+        self.resident_id = None
+        self.resident_name = "Unknown"
 
 class CVProcessor:
     def __init__(self):
         self.registered_residents: list = []
         self._frame_count = 0
+        self.active_tracks = {}
         self._init_models()
 
     def _init_models(self):
-        """初始化 PoseLandmarker 與 FaceLandmarker（Tasks API）。"""
         try:
-            # Pose
-            pose_opts = mp_python.BaseOptions(model_asset_path=POSE_MODEL)
-            pose_options = mp_vision.PoseLandmarkerOptions(
-                base_options=pose_opts,
-                running_mode=VisionTaskRunningMode.IMAGE,
-                num_poses=5,
-                min_pose_detection_confidence=0.5,
-                min_pose_presence_confidence=0.5,
-                min_tracking_confidence=0.5,
-                output_segmentation_masks=False,
-            )
-            self.pose_detector = mp_vision.PoseLandmarker.create_from_options(pose_options)
-
-            # Face
+            self.model = YOLO(YOLO_MODEL)
+            
             face_opts = mp_python.BaseOptions(model_asset_path=FACE_MODEL)
             face_options = mp_vision.FaceLandmarkerOptions(
                 base_options=face_opts,
@@ -60,51 +51,22 @@ class CVProcessor:
             )
             self.face_detector = mp_vision.FaceLandmarker.create_from_options(face_options)
             self._ready = True
-            print("[CV] MediaPipe Tasks API 初始化成功")
+            print("[CV] YOLOv8-Pose + MP Face 初始化成功")
         except Exception as e:
-            print(f"[CV] 模型初始化失敗（Mock 模式）: {e}")
-            self.pose_detector = None
-            self.face_detector = None
+            print(f"[CV] 模型初始化失敗: {e}")
             self._ready = False
 
     def refresh_residents(self, db: Session):
-        """從資料庫重新載入長者 embedding 快取。"""
         residents = db.query(Resident).filter(Resident.face_embedding != None).all()
         self.registered_residents = [
             {"id": r.id, "name": r.name, "embedding": np.array(r.face_embedding)}
             for r in residents
         ]
-
-    def determine_posture(self, pose_landmarks) -> str:
-        """以肩膀/髖部 Y 軸差值判斷姿態（Standing / Sitting / Lying）。"""
-        if not pose_landmarks:
-            return "Unknown"
-        try:
-            ls, rs = pose_landmarks[11], pose_landmarks[12]
-            lh, rh = pose_landmarks[23], pose_landmarks[24]
-            avg_shoulder_y = (ls.y + rs.y) / 2
-            avg_hip_y = (lh.y + rh.y) / 2
-            diff = abs(avg_shoulder_y - avg_hip_y)
-            if diff < 0.15:
-                return "Lying"
-            elif avg_shoulder_y < avg_hip_y - 0.3:
-                return "Standing"
-            else:
-                return "Sitting"
-        except (IndexError, AttributeError):
-            return "Unknown"
-            
+        
     def detect_objects(self, frame) -> str:
-        """
-        [TODO] 在此處擴充 YOLO 或 Object Detection 模型，
-        回傳偵測到的互動特徵字串 (例如 "wheelchair", "knife" 等)
-        """
         return ""
 
     def process_frame(self, frame: np.ndarray, db: Session):
-        """
-        主處理入口 - 整合 Frame Sampling 與 Multi-Object Tracking
-        """
         import time
         start_time = time.time()
         self._frame_count += 1
@@ -117,77 +79,109 @@ class CVProcessor:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
             return frame, [], "Unknown"
 
-
-        from .tracking import tracker
-
-        # 每 3 幀做一次 Full Detection (Detection Interval 節省 CPU)
-        run_detection = (self._frame_count % 3 == 1)
+        # 每隔 2 幀才追蹤，讓 FPS 上升 (YOLOv8 ByteTrack 有時需要連貫，但可降頻)
+        # 不降頻 YOLOv8n 在 CPU 可能慢，先全速跑，如果不順再補降頻邏輯
+        results = self.model.track(frame, persist=True, tracker="bytetrack.yaml", verbose=False)
+        result = results[0]
         
-        active_tracks = []
-        object_interaction = self.detect_objects(frame)
+        # 原生骨架與追蹤框繪圖 (極度美觀)
+        annotated_frame = result.plot(boxes=False, labels=False, kpt_radius=3, kpt_line=True)
+        
         h, w = frame.shape[:2]
-
-        if run_detection:
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-
-            # 1. Pose Detection (用以獲取人體姿態與整體 Bounding Box)
-            pose_result = self.pose_detector.detect(mp_image)
-            detections_bboxes = []
-            postures = []
-            
-            if pose_result.pose_landmarks:
-                for person_landmarks in pose_result.pose_landmarks:
-                    posture = self.determine_posture(person_landmarks)
-                    xs = [lm.x * w for lm in person_landmarks]
-                    ys = [lm.y * h for lm in person_landmarks]
-                    x1, y1 = max(0, min(xs)), max(0, min(ys))
-                    x2, y2 = min(w, max(xs)), min(h, max(ys))
-                    
-                    padding = 20
-                    detections_bboxes.append([max(0, x1-padding), max(0, y1-padding), min(w, x2+padding), min(h, y2+padding)])
-                    postures.append(posture)
-
-            # 2. Tracking 更新 (產生或關聯 Identity)
-            active_tracks = tracker.update(detections_bboxes, postures)
-
-            # 3. 臉部辨識 (ArcFace) 只對「尚未辨識出身份的 Track」執行
-            unidentified_tracks = [t for t in active_tracks if t.resident_id is None]
-            if unidentified_tracks:
-                face_result = self.face_detector.detect(mp_image)
-                if face_result.face_landmarks:
-                    for face_lms in face_result.face_landmarks:
-                        fxs = [lm.x * w for lm in face_lms]
-                        fys = [lm.y * h for lm in face_lms]
-                        fx1, fy1, fx2, fy2 = min(fxs), min(fys), max(fxs), max(fys)
-                        face_cx, face_cy = (fx1 + fx2) / 2, (fy1 + fy2) / 2
-                        
-                        # 把臉部分派給對應的 Track
-                        matched_track = None
-                        for trk in unidentified_tracks:
-                            tx1, ty1, tx2, ty2 = trk.smoothed_bbox
-                            # 若臉部中心點在人體框內
-                            if tx1 - 10 <= face_cx <= tx2 + 10 and ty1 - 10 <= face_cy <= ty2 + 10:
-                                matched_track = trk
-                                break
-                        
-                        if matched_track:
-                            emb_list = face_recognizer.extract_embedding(frame, face_lms)
-                            res_id, res_name = face_recognizer.match_face(emb_list, self.registered_residents)
-                            if res_id:
-                                matched_track.resident_id = res_id
-                                matched_track.resident_name = res_name
-        else:
-            # 非偵測幀，純預測追蹤框位置，平滑過渡
-            active_tracks = tracker.update([], [])
-
         recognized_names = []
         global_posture = "Unknown"
-        active_track_count = len(active_tracks)
+        active_track_count = 0
+        
+        object_interaction = self.detect_objects(frame)
+        current_tracks = []
+        
+        if result.boxes is not None and result.boxes.id is not None:
+            boxes = result.boxes.xyxy.cpu().numpy()
+            track_ids = result.boxes.id.int().cpu().numpy()
+            
+            if hasattr(result, 'keypoints') and result.keypoints is not None:
+                keypoints_data = result.keypoints.data.cpu().numpy() # [N, 17, 3] usually
+            else:
+                keypoints_data = [None] * len(boxes)
+                
+            active_track_count = len(boxes)
+            
+            for box, track_id, keypoints in zip(boxes, track_ids, keypoints_data):
+                x1, y1, x2, y2 = box
+                
+                if track_id not in self.active_tracks:
+                    self.active_tracks[track_id] = TrackedPerson(track_id, box, "Unknown")
+                    
+                trk = self.active_tracks[track_id]
+                
+                # EMA 降低框線抖動
+                alpha = 0.5
+                trk.smoothed_bbox = [
+                    trk.smoothed_bbox[0] * (1-alpha) + x1 * alpha,
+                    trk.smoothed_bbox[1] * (1-alpha) + y1 * alpha,
+                    trk.smoothed_bbox[2] * (1-alpha) + x2 * alpha,
+                    trk.smoothed_bbox[3] * (1-alpha) + y2 * alpha
+                ]
+                
+                posture = anomaly_engine.determine_posture_yolo(keypoints, box)
+                trk.posture = posture
+                current_tracks.append(trk)
 
-        # 4. 繪製平滑框與判定異常事件
-        for trk in active_tracks:
-            # 取得經 EMA 平滑化的 Track 框線
+            # Face Recognition
+            unidentified_tracks = [t for t in current_tracks if t.resident_id is None]
+            
+            # Rate limit variables
+            import time
+            current_time = time.time()
+            if not hasattr(self, '_face_check_cooldowns'):
+                self._face_check_cooldowns = {}
+                
+            # Filter tracks that are on cooldown (try once every 1.5 seconds)
+            ready_to_check_tracks = []
+            for t in unidentified_tracks:
+                if current_time - self._face_check_cooldowns.get(t.track_id, 0) > 1.5:
+                    ready_to_check_tracks.append(t)
+                    
+            if ready_to_check_tracks and self.face_detector:
+                try:
+                    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+                    face_result = self.face_detector.detect(mp_image)
+                    
+                    if face_result and face_result.face_landmarks:
+                        for face_lms in face_result.face_landmarks:
+                            fxs = [lm.x * w for lm in face_lms]
+                            fys = [lm.y * h for lm in face_lms]
+                            fx1, fy1, fx2, fy2 = min(fxs), min(fys), max(fxs), max(fys)
+                            face_cx, face_cy = (fx1 + fx2) / 2, (fy1 + fy2) / 2
+                            
+                            cv2.rectangle(annotated_frame, (int(fx1), int(fy1)), (int(fx2), int(fy2)), (255, 200, 0), 2)
+                            cv2.putText(annotated_frame, "Face Detected", (int(fx1), max(10, int(fy1)-5)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 200, 0), 1)
+                            
+                            matched_track = None
+                            for trk in ready_to_check_tracks:
+                                tx1, ty1, tx2, ty2 = trk.smoothed_bbox
+                                if tx1 - 10 <= face_cx <= tx2 + 10 and ty1 - 10 <= face_cy <= ty2 + 10:
+                                    matched_track = trk
+                                    break
+                            
+                            if matched_track:
+                                # Apply cooldown immediately
+                                self._face_check_cooldowns[matched_track.track_id] = current_time
+                                
+                                emb_list = face_recognizer.extract_embedding(frame, face_lms)
+                                res_id, res_name = face_recognizer.match_face(emb_list, self.registered_residents)
+                                if res_id:
+                                    print(f"[Face] 成功辨識出 Track ID {matched_track.track_id} 為 {res_name}!")
+                                    matched_track.resident_id = res_id
+                                    matched_track.resident_name = res_name
+                except Exception as e:
+                    print(f"[Face] 臉部辨識發生錯誤，略過此幀: {e}")
+
+        current_track_ids = {t.track_id for t in current_tracks}
+        self.active_tracks = {k: v for k, v in self.active_tracks.items() if k in current_track_ids}
+
+        for trk in current_tracks:
             tx1, ty1, tx2, ty2 = map(int, trk.smoothed_bbox)
             name = trk.resident_name
             posture = trk.posture
@@ -196,17 +190,15 @@ class CVProcessor:
             if name != "Unknown":
                 recognized_names.append(name)
             
-            # 繪製平滑框 (大幅減少 UI Jitter)
             color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
-            cv2.rectangle(frame, (tx1, ty1), (tx2, ty2), color, 2)
+            # 自行畫出平滑框，取代原本 plot 會閃爍的框
+            cv2.rectangle(annotated_frame, (tx1, ty1), (tx2, ty2), color, 2)
             label = f"ID:{trk.track_id} {name} [{posture}]"
-            cv2.putText(frame, label, (tx1, max(20, ty1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+            cv2.putText(annotated_frame, label, (tx1, max(20, ty1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
             
-            # 將完整的 Tracking Entity 餵給異常判斷引擎，以實作更嚴格的防誤報邏輯
             if trk.resident_id:
-                anomaly_engine.evaluate(trk.resident_id, name, posture, object_interaction, frame, db, trk)
+                anomaly_engine.evaluate(trk.resident_id, name, posture, object_interaction, annotated_frame, db, trk)
 
-                # 定期紀錄日常行為
                 if self._frame_count % 300 == 0:
                     from ..db import Event
                     try:
@@ -221,14 +213,11 @@ class CVProcessor:
                     except Exception as e:
                         db.rollback()
 
-        # 5. AI Inference Latency & Metrics Logging (每 300 幀記錄一次)
         end_time = time.time()
         latency_ms = (end_time - start_time) * 1000
-        
         if self._frame_count % 300 == 0:
             from ..db import SystemMetric
             try:
-                # 簡單計算過去 300 幀的估計 FPS (不含 sleep)
                 approx_fps = 1000.0 / (latency_ms + 1e-5)
                 new_metric = SystemMetric(
                     ai_latency_ms=latency_ms,
@@ -240,6 +229,6 @@ class CVProcessor:
             except Exception as e:
                 db.rollback()
 
-        return frame, recognized_names, global_posture
+        return annotated_frame, recognized_names, global_posture
 
 processor = CVProcessor()
