@@ -46,10 +46,20 @@ function CameraModal({ src, name, onClose }: { src: string; name: string; onClos
 
 // Single camera tile
 function CamTile({ name, src, isMain, onClick }: { name: string; src?: string; isMain?: boolean; onClick: () => void }) {
-    if (!src) {
+    const [hasError, setHasError] = useState(false);
+
+    // src 改變時重設錯誤，讓圖片重試
+    useEffect(() => { setHasError(false); }, [src]);
+
+    if (!src || hasError) {
         return (
-            <div className="relative bg-zinc-950 aspect-video rounded-lg flex items-center justify-center border border-zinc-800">
-                <span className="text-zinc-600 text-sm font-medium">{name} - OFFLINE</span>
+            <div className="relative bg-zinc-950 aspect-video rounded-lg flex flex-col items-center justify-center border border-zinc-800 gap-2">
+                <span className="text-zinc-600 text-sm font-medium">{name}</span>
+                {hasError && src ? (
+                    <span className="text-zinc-700 text-xs animate-pulse">連線中，請稍候...</span>
+                ) : (
+                    <span className="text-zinc-700 text-xs">OFFLINE</span>
+                )}
             </div>
         );
     }
@@ -59,8 +69,17 @@ function CamTile({ name, src, isMain, onClick }: { name: string; src?: string; i
             className="relative bg-black aspect-video rounded-lg overflow-hidden cursor-pointer group border border-zinc-800 hover:border-indigo-500/50 transition-colors"
             title="點擊放大"
         >
-            <img src={src} alt={name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+            <img
+                key={src}
+                src={src}
+                alt={name}
+                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                onError={() => {
+                    // 3 秒後重試，而不是永久隱藏
+                    setTimeout(() => setHasError(false), 3000);
+                    setHasError(true);
+                }}
+            />
             <div className="absolute top-3 left-3 flex gap-2">
                 {isMain && (
                     <span className="px-2 py-1 rounded bg-red-500/80 text-white text-[10px] font-bold flex items-center shadow-lg">
@@ -86,7 +105,9 @@ export default function Dashboard() {
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
     const { t } = useTranslation();
 
-    const baseUrl = `http://${window.location.hostname}:8000`;
+    // 本機開發用 :8000，ngrok / 遠端存取直接用現在的 origin（不加 port）
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const baseUrl = isLocal ? `http://${window.location.hostname}:8000` : window.location.origin;
 
     useEffect(() => {
         const fetchAll = async () => {
@@ -100,9 +121,9 @@ export default function Dashboard() {
                 setEvents(eventsRes.data);
                 const cams: Camera[] = camRes.data;
                 setCameras(cams);
-                // Default to first camera
-                if (cams.length > 0 && selectedCamId === null) {
-                    setSelectedCamId(cams[0].id);
+                // 使用 functional update 確保只在真正是 null 時才設定第一台，避免閉包 bug 重設用戶的選擇
+                if (cams.length > 0) {
+                    setSelectedCamId(prev => prev === null ? cams[0].id : prev);
                 }
             } catch (err) {
                 console.error("Failed to fetch dashboard data");
@@ -114,11 +135,23 @@ export default function Dashboard() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // 當主攝影機切換時，主動呼叫後端讓 AI pipeline 跟著切換
+    useEffect(() => {
+        if (selectedCamId === null) return;
+        const cam = cameras.find(c => c.id === selectedCamId);
+        if (!cam || cam.status === 'offline') return;
+        // 輕量化請求，告知後端切換 AI 來源（後端收到後 pipeline.update_source 會執行）
+        const switchUrl = `${baseUrl}/video/stream?source=${encodeURIComponent(cam.source.trim())}&camera_id=${cam.id}&_switch=1`;
+        const ctrl = new AbortController();
+        fetch(switchUrl, { signal: ctrl.signal }).catch(() => {/* 忽略連線本身，只需要觸發切換 */});
+        // 立即中斷連線，我們只需要讓後端處理一次 update_source
+        setTimeout(() => ctrl.abort(), 300);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedCamId]);
+
     const getStreamUrl = (cam?: Camera, isMain: boolean = false) => {
         if (!cam) return null;
-        if (cam.status === 'offline' || cam.status === 'connecting') {
-            return null; // Don't try to stream from offline/connecting cameras
-        }
+        // 移除 offline 封鎖：讓系統嘗試連線，若真的連不上前端 onError 會自動隱藏 img
         const src = cam.source.trim();
         const endpoint = isMain ? '/video/stream' : '/video/proxy';
         return `${baseUrl}${endpoint}?source=${encodeURIComponent(src)}&camera_id=${cam.id}`;

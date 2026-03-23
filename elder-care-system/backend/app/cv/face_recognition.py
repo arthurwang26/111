@@ -6,9 +6,20 @@
 """
 import os
 import cv2
+import yaml
 import numpy as np
 import onnxruntime as ort
 from scipy.spatial.distance import cosine
+
+# 讀取 AI 設定檔
+def load_ai_config():
+    config_path = os.path.join(os.path.dirname(__file__), "../../../config/ai_config.yaml")
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    except Exception as e:
+        print(f"[Face] 讀取 ai_config.yaml 失敗，沿用預設設定: {e}")
+        return {}
 
 # 預設 112x112 臉部五官對齊標準點 (由 InsightFace 論文定義)
 arcface_src = np.array([
@@ -21,14 +32,28 @@ arcface_src = np.array([
 
 class FaceRecognizer:
     def __init__(self):
-        self.threshold = 0.38  # 從 0.48 降為 0.38，允許一般畫質或側臉也能順利完成第一次比對
+        config = load_ai_config()
+        ai_settings = config.get("ai", {})
+        model_settings = config.get("models", {}).get("face_recognition", {})
+        
+        self.threshold = model_settings.get("similarity_threshold", 0.38)
         model_path = os.getenv("ARCFACE_MODEL_PATH", r"C:\elder_care_models\buffalo_l\w600k_r50.onnx")
         
+        device = ai_settings.get("device", "cuda").lower()
+        fallback_cpu = ai_settings.get("fallback_cpu", True)
+        
+        providers = []
+        if device == "cuda":
+            providers.append('CUDAExecutionProvider')
+        if fallback_cpu or device == "cpu":
+            providers.append('CPUExecutionProvider')
+            
         try:
-            self.session = ort.InferenceSession(model_path, providers=['CPUExecutionProvider'])
+            self.session = ort.InferenceSession(model_path, providers=providers)
+            active_providers = self.session.get_providers()
             self.input_name = self.session.get_inputs()[0].name
             self._ready = True
-            print("[Face] ArcFace ONNX Model (w600k_r50.onnx) 載入成功！")
+            print(f"[Face] ArcFace ONNX Model 載入成功！運行於: {active_providers[0]}")
         except Exception as e:
             print(f"[Face] ArcFace 模型載入失敗: {e}")
             self._ready = False

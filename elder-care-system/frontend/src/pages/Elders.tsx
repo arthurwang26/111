@@ -193,7 +193,7 @@ export default function EldersPage() {
                             className="group relative p-5 rounded-xl bg-zinc-900 ring-1 ring-white/5 hover:ring-indigo-500/50 hover:bg-zinc-800/50 transition-all"
                         >
                             <Link to={`/elders/${elder.id}`} className="absolute inset-0 z-10" />
-                            <div className="flex items-center justify-between relative z-0">
+                            <div className="flex items-center justify-between relative z-20 pointer-events-none">
                                 <div className="flex items-center gap-4">
                                     <div className="h-12 w-12 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold text-lg">
                                         {elder.name[0]}
@@ -209,10 +209,10 @@ export default function EldersPage() {
                                         </div>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2 relative z-20">
+                                <div className="flex items-center gap-2 relative z-30 pointer-events-auto">
                                     <button
                                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteModal({ id: elder.id, name: elder.name }); }}
-                                        className="p-2 rounded-lg text-zinc-500 hover:bg-red-500/10 hover:text-red-400 transition-colors pointer-events-auto"
+                                        className="p-2 rounded-lg text-zinc-500 hover:bg-red-500/10 hover:text-red-400 transition-colors"
                                         title={t('elders.del_btn')}
                                     >
                                         <Trash2 size={18} />

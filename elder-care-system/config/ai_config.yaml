@@ -1,0 +1,26 @@
+ai:
+  device: cuda
+  fallback_cpu: true
+  batch_size: 1
+  memory_limit: auto
+
+models:
+  detection:
+    name: "yolov8n-pose.pt"
+    confidence_threshold: 0.5
+  tracking:
+    name: "bytetrack"
+    track_buffer: 30
+  face_recognition:
+    detector: "mediapipe"  # Future: scrfd / retinaface
+    recognizer: "w600k_r50.onnx"
+    provider: "CUDAExecutionProvider"
+    similarity_threshold: 0.38
+  reid:
+    name: "osnet"      # Placeholder for future integration
+    enabled: false
+
+optimization:
+  frame_skip: 0
+  roi_enabled: true
+  cache_timeout_seconds: 5

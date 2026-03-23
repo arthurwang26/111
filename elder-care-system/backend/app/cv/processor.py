@@ -10,10 +10,12 @@ from mediapipe.tasks.python import vision as mp_vision
 from mediapipe.tasks.python.vision.core.vision_task_running_mode import VisionTaskRunningMode
 from sqlalchemy.orm import Session
 from ..db import Resident
+import yaml
 
 # Import new modular architecture
 from .face_recognition import face_recognizer
 from .anomaly_rules import anomaly_engine
+from .identity import identity_manager
 
 _BASE = os.getenv("MODEL_PATH", r"C:\elder_care_models" if os.name == 'nt' else "/app/models")
 FACE_MODEL = os.path.join(_BASE, "face_landmarker.task")
@@ -36,8 +38,20 @@ class CVProcessor:
 
     def _init_models(self):
         try:
+            config_path = os.path.join(os.path.dirname(__file__), "../../../config/ai_config.yaml")
+            device = "cuda"
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = yaml.safe_load(f)
+                    device = config.get("ai", {}).get("device", "cuda").lower()
+            except:
+                pass
+
             self.model = YOLO(YOLO_MODEL)
-            
+            if device == "cuda":
+                self.model.to("cuda")
+                print("[CV] YOLOv8-Pose 強制派發至 CUDA")
+                
             face_opts = mp_python.BaseOptions(model_asset_path=FACE_MODEL)
             face_options = mp_vision.FaceLandmarkerOptions(
                 base_options=face_opts,
@@ -62,6 +76,7 @@ class CVProcessor:
             {"id": r.id, "name": r.name, "embedding": np.array(r.face_embedding)}
             for r in residents
         ]
+        identity_manager.update_registered_residents(self.registered_residents)
         
     def detect_objects(self, frame) -> str:
         return ""
@@ -170,13 +185,32 @@ class CVProcessor:
                                 self._face_check_cooldowns[matched_track.track_id] = current_time
                                 
                                 emb_list = face_recognizer.extract_embedding(frame, face_lms)
-                                res_id, res_name = face_recognizer.match_face(emb_list, self.registered_residents)
-                                if res_id:
-                                    print(f"[Face] 成功辨識出 Track ID {matched_track.track_id} 為 {res_name}!")
-                                    matched_track.resident_id = res_id
-                                    matched_track.resident_name = res_name
+                                matched_track._temp_face_emb = emb_list
+                                
                 except Exception as e:
                     print(f"[Face] 臉部辨識發生錯誤，略過此幀: {e}")
+
+        # 使用 IdentityManager 解析持續的身分
+        for trk in current_tracks:
+            extracted_face_emb = getattr(trk, "_temp_face_emb", None)
+            
+            # 委託 IdentityManager 解析此軌跡的身分
+            resolved_id, resolved_name = identity_manager.resolve_identity(
+                trk.track_id, 
+                extracted_face_emb, 
+                face_recognizer
+            )
+            
+            trk.resident_id = resolved_id
+            trk.resident_name = resolved_name
+            
+            # 清理暫存
+            if hasattr(trk, "_temp_face_emb"):
+                delattr(trk, "_temp_face_emb")
+                
+        # 定期清理舊軌跡 Cache
+        if self._frame_count % 300 == 0:
+            identity_manager.clean_stale_tracks()
 
         current_track_ids = {t.track_id for t in current_tracks}
         self.active_tracks = {k: v for k, v in self.active_tracks.items() if k in current_track_ids}

@@ -1,0 +1,16 @@
+server:
+  host: "0.0.0.0"
+  port: 8000
+  base_url: "http://localhost:8000"
+
+database:
+  db_type: "sqlite" # Future: postgresql
+  sqlite_path: "sqlite:///./elder_care.db"
+
+logging:
+  level: "INFO"
+  file_logging: true
+
+alerts:
+  line_notify_enabled: true
+  cooldown_seconds: 60
